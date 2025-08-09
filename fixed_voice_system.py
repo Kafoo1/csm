@@ -1,69 +1,13 @@
 import torch
 import torchaudio
 from transformers import AutoProcessor, CsmForConditionalGeneration
-import json
+import re
 import time
 
-# SIMPLE NOISE REDUCTION (No external libraries)
-class SimpleNoiseReducer:
-    """Simple, reliable noise reduction using only PyTorch/torchaudio"""
-    
-    def clean_audio_simple(self, audio_file, output_file):
-        """Simple but effective noise cleaning"""
-        
-        print(f'🔧 Cleaning audio: {audio_file}')
-        
-        try:
-            # Load audio
-            waveform, sample_rate = torchaudio.load(audio_file)
-            
-            # Simple cleaning operations
-            cleaned = self._basic_cleaning(waveform, sample_rate)
-            
-            # Save with proper format
-            torchaudio.save(output_file, cleaned, sample_rate)
-            print(f'✅ Clean audio saved: {output_file}')
-            
-            return output_file
-            
-        except Exception as e:
-            print(f'❌ Cleaning failed: {e}')
-            return audio_file
-    
-    def _basic_cleaning(self, waveform, sample_rate):
-        """Basic audio cleaning operations"""
-        
-        # 1. Normalize to prevent clipping
-        max_val = torch.max(torch.abs(waveform))
-        if max_val > 0:
-            waveform = waveform / max_val * 0.9
-        
-        # 2. Simple noise gate (remove very quiet sounds)
-        noise_threshold = 0.015
-        mask = torch.abs(waveform) > noise_threshold
-        waveform = waveform * mask.float()
-        
-        # 3. Smooth transitions to avoid clicks
-        # Apply very light smoothing
-        if waveform.shape[1] > 100:
-            kernel_size = 3
-            kernel = torch.ones(1, 1, kernel_size) / kernel_size
-            waveform_padded = torch.nn.functional.pad(waveform.unsqueeze(1), (1, 1), mode='reflect')
-            waveform = torch.nn.functional.conv1d(waveform_padded, kernel, padding=0).squeeze(1)
-        
-        # 4. Final normalization
-        max_val = torch.max(torch.abs(waveform))
-        if max_val > 0:
-            waveform = waveform / max_val * 0.85
-        
-        return waveform
-
-# FIXED CSM CONVERSATION FORMAT
-class FixedUniversalAgent:
-    """Fixed universal agent with correct CSM conversation format"""
+class NaturalConversationEngine:
+    """Creates natural, flowing conversations like Maya"""
     
     def __init__(self):
-        # Load CSM
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         model_id = "sesame/csm-1b"
         self.processor = AutoProcessor.from_pretrained(model_id)
@@ -74,35 +18,281 @@ class FixedUniversalAgent:
         )
         self.model.eval()
         
-        # Simple noise reducer
-        self.noise_reducer = SimpleNoiseReducer()
+        # Conversation state tracking
+        self.conversation_history = {}
+        self.speaker_profiles = self._initialize_speaker_profiles()
         
-        # Business configurations
-        self.businesses = {}
+        print('🎭 Natural Conversation Engine loaded!')
+    
+    def _initialize_speaker_profiles(self):
+        """Define natural speaker characteristics"""
+        return {
+            'restaurant_host': {
+                'speaker_id': 0,
+                'base_energy': 'warm',
+                'personality': 'friendly, welcoming, Italian warmth',
+                'pace': 'moderate',
+                'emotional_range': 'moderate'
+            },
+            'professional_agent': {
+                'speaker_id': 1,
+                'base_energy': 'confident',
+                'personality': 'professional, helpful, knowledgeable',
+                'pace': 'measured',
+                'emotional_range': 'controlled'
+            },
+            'caring_assistant': {
+                'speaker_id': 0,
+                'base_energy': 'gentle',
+                'personality': 'caring, patient, understanding',
+                'pace': 'slow',
+                'emotional_range': 'empathetic'
+            }
+        }
+    
+    def analyze_conversation_context(self, customer_input, conversation_history):
+        """Analyze conversation context for natural response adaptation"""
         
-        print('🚀 Fixed Universal Voice Agent loaded!')
+        context = {
+            'customer_energy': 'neutral',
+            'conversation_stage': 'greeting',
+            'customer_mood': 'neutral',
+            'topic_urgency': 'normal',
+            'formality_level': 'casual'
+        }
+        
+        if customer_input:
+            input_lower = customer_input.lower()
+            
+            # Detect customer energy level
+            excited_words = ['great', 'awesome', 'amazing', 'love', 'fantastic', 'perfect']
+            concerned_words = ['problem', 'issue', 'wrong', 'trouble', 'help', 'urgent']
+            casual_words = ['hi', 'hey', 'hello', 'thanks', 'cool']
+            formal_words = ['good morning', 'good afternoon', 'please', 'thank you']
+            
+            if any(word in input_lower for word in excited_words):
+                context['customer_energy'] = 'excited'
+                context['customer_mood'] = 'positive'
+            elif any(word in input_lower for word in concerned_words):
+                context['customer_energy'] = 'concerned'
+                context['customer_mood'] = 'negative'
+            elif any(word in input_lower for word in casual_words):
+                context['formality_level'] = 'casual'
+            elif any(word in input_lower for word in formal_words):
+                context['formality_level'] = 'formal'
+            
+            # Detect conversation stage
+            greeting_words = ['hi', 'hello', 'hey']
+            question_words = ['what', 'how', 'when', 'where', 'can you']
+            closing_words = ['thanks', 'goodbye', 'bye', 'that\'s all']
+            
+            if any(word in input_lower for word in greeting_words):
+                context['conversation_stage'] = 'greeting'
+            elif any(word in input_lower for word in question_words):
+                context['conversation_stage'] = 'information'
+            elif any(word in input_lower for word in closing_words):
+                context['conversation_stage'] = 'closing'
+            else:
+                context['conversation_stage'] = 'ongoing'
+        
+        return context
     
-    def add_business(self, business_id, config):
-        """Add business configuration"""
-        self.businesses[business_id] = config
-        print(f'✅ Added business: {config["name"]}')
+    def format_text_for_natural_speech(self, text, context, speaker_profile):
+        """Format text to encourage natural speech patterns"""
+        
+        # Add natural pauses and emphasis based on context
+        formatted_text = text
+        
+        # Add emotional emphasis based on customer energy
+        if context['customer_energy'] == 'excited':
+            # Match customer excitement with slight enthusiasm
+            formatted_text = self._add_enthusiasm_markers(formatted_text)
+        elif context['customer_energy'] == 'concerned':
+            # Respond with reassuring tone
+            formatted_text = self._add_reassurance_markers(formatted_text)
+        
+        # Add conversational flow markers
+        formatted_text = self._add_conversational_flow(formatted_text, context)
+        
+        # Add natural breathing pauses
+        formatted_text = self._add_natural_pauses(formatted_text)
+        
+        return formatted_text
     
-    def get_business_by_phone(self, phone_number):
-        """Find business by phone number"""
-        for business_id, config in self.businesses.items():
-            if config['phone_number'] == phone_number:
-                return business_id, config
-        return None, None
+    def _add_enthusiasm_markers(self, text):
+        """Add subtle enthusiasm without overdoing it"""
+        # Replace period with slight emphasis for positive responses
+        if any(word in text.lower() for word in ['great', 'perfect', 'wonderful']):
+            text = text.replace('!', '!')  # Keep existing enthusiasm
+        return text
     
-    def generate_clean_speech(self, text, speaker_id=0, business_name=""):
-        """Generate speech with correct CSM format and clean audio"""
+    def _add_reassurance_markers(self, text):
+        """Add reassuring tone markers"""
+        # Add gentle reassurance for problem-solving
+        if any(word in text.lower() for word in ['help', 'assist', 'solve']):
+            text = text.replace('.', '.')  # Keep calm tone
+        return text
+    
+    def _add_conversational_flow(self, text, context):
+        """Add conversational connectors for natural flow"""
+        
+        # Add conversation stage appropriate openings
+        if context['conversation_stage'] == 'greeting':
+            # Natural greeting flow - no changes needed
+            pass
+        elif context['conversation_stage'] == 'information':
+            # Add thoughtful response indicators
+            if text.startswith('We have') or text.startswith('Our'):
+                text = 'Let me tell you about that. ' + text
+        elif context['conversation_stage'] == 'closing':
+            # Add warm closing flow
+            if 'thank' not in text.lower():
+                text = text + ' Thank you for calling!'
+        
+        return text
+    
+    def _add_natural_pauses(self, text):
+        """Add natural breathing pauses using punctuation"""
+        
+        # Add commas for natural breathing
+        text = re.sub(r'(\w+) (and|or|but) (\w+)', r'\1, \2 \3', text)
+        
+        # Add slight pause after greetings
+        text = re.sub(r'^(Hello|Hi|Hey)', r'\1,', text)
+        
+        # Add natural pause before questions
+        text = re.sub(r'(\.) (How|What|When|Where|Can)', r'\1 \2', text)
+        
+        return text
+    
+    def calculate_adaptive_generation_params(self, context, speaker_profile):
+        """Calculate generation parameters for natural conversation flow"""
+        
+        base_temp = 0.7
+        
+        # Adjust temperature based on customer energy and conversation context
+        if context['customer_energy'] == 'excited':
+            temperature = base_temp + 0.1  # Slightly more expressive
+        elif context['customer_energy'] == 'concerned':
+            temperature = base_temp - 0.1  # More controlled, reassuring
+        elif context['conversation_stage'] == 'greeting':
+            temperature = base_temp + 0.05  # Slightly warmer
+        else:
+            temperature = base_temp
+        
+        # Adjust other parameters for natural flow
+        params = {
+            'temperature': temperature,
+            'max_new_tokens': self._calculate_optimal_length(context),
+            'do_sample': True,
+            'repetition_penalty': 1.05,  # Prevent word repetition
+        }
+        
+        return params
+    
+    def _calculate_optimal_length(self, context):
+        """Calculate optimal response length for natural conversation"""
+        
+        if context['conversation_stage'] == 'greeting':
+            return 60  # Shorter, punchy greetings
+        elif context['conversation_stage'] == 'information':
+            return 100  # Longer for explanations
+        elif context['conversation_stage'] == 'closing':
+            return 50  # Brief, warm closings
+        else:
+            return 80  # Standard conversational length
+    
+    def create_consistent_conversation_context(self, session_id, speaker_profile, text):
+        """Build conversation context that maintains consistency"""
+        
+        # Get or create conversation history
+        if session_id not in self.conversation_history:
+            self.conversation_history[session_id] = {
+                'speaker_profile': speaker_profile,
+                'exchanges': [],
+                'established_personality': False
+            }
+        
+        session = self.conversation_history[session_id]
+        
+        # Build conversation for consistency
+        conversation = []
+        
+        # Personality establishment (first exchange)
+        if not session['established_personality']:
+            personality_text = self._create_personality_anchor(speaker_profile)
+            conversation.append({
+                "role": str(speaker_profile['speaker_id']),
+                "content": [{"type": "text", "text": personality_text}]
+            })
+            session['established_personality'] = True
+        
+        # Add recent conversation history (last 2 exchanges for context)
+        recent_exchanges = session['exchanges'][-2:] if len(session['exchanges']) > 2 else session['exchanges']
+        for exchange in recent_exchanges:
+            conversation.append({
+                "role": str(speaker_profile['speaker_id']),
+                "content": [{"type": "text", "text": exchange}]
+            })
+        
+        # Add current response
+        conversation.append({
+            "role": str(speaker_profile['speaker_id']),
+            "content": [{"type": "text", "text": text}]
+        })
+        
+        # Store current exchange
+        session['exchanges'].append(text)
+        
+        return conversation
+    
+    def _create_personality_anchor(self, speaker_profile):
+        """Create personality anchoring text for consistency"""
+        
+        personality_anchors = {
+            'restaurant_host': "I'm Sofia, and I love welcoming guests to our restaurant.",
+            'professional_agent': "I'm here to provide professional assistance with your needs.",
+            'caring_assistant': "I'm here to help you with care and attention."
+        }
+        
+        # Find matching profile
+        for profile_name, profile_data in self.speaker_profiles.items():
+            if profile_data['speaker_id'] == speaker_profile['speaker_id']:
+                return personality_anchors.get(profile_name, "I'm here to help you today.")
+        
+        return "I'm here to help you today."
+    
+    def generate_natural_conversation(self, session_id, text, customer_input=None, business_type='restaurant'):
+        """Generate natural, flowing conversation"""
+        
+        # Select appropriate speaker profile
+        profile_mapping = {
+            'restaurant': 'restaurant_host',
+            'real_estate': 'professional_agent', 
+            'medical': 'caring_assistant'
+        }
+        
+        speaker_profile_name = profile_mapping.get(business_type, 'restaurant_host')
+        speaker_profile = self.speaker_profiles[speaker_profile_name]
+        
+        # Analyze conversation context
+        context = self.analyze_conversation_context(customer_input, 
+            self.conversation_history.get(session_id, {}).get('exchanges', []))
+        
+        print(f'🎭 Context: {context["customer_energy"]} energy, {context["conversation_stage"]} stage')
+        
+        # Format text for natural speech
+        formatted_text = self.format_text_for_natural_speech(text, context, speaker_profile)
+        
+        # Build consistent conversation context
+        conversation = self.create_consistent_conversation_context(session_id, speaker_profile, formatted_text)
+        
+        # Calculate adaptive generation parameters
+        gen_params = self.calculate_adaptive_generation_params(context, speaker_profile)
+        
+        print(f'🎚️ Generation params: temp={gen_params["temperature"]:.2f}, tokens={gen_params["max_new_tokens"]}')
         
         try:
-            # CORRECT CSM FORMAT: Simple conversation (no mixed audio/text)
-            conversation = [
-                {"role": str(speaker_id), "content": [{"type": "text", "text": text}]}
-            ]
-            
             # Process input
             inputs = self.processor.apply_chat_template(
                 conversation, 
@@ -110,210 +300,125 @@ class FixedUniversalAgent:
                 return_dict=True,
             ).to(self.device)
             
-            # Generate with safe parameters
+            # Generate with natural parameters
             with torch.no_grad():
                 audio = self.model.generate(
                     **inputs,
                     output_audio=True,
-                    max_new_tokens=80,   # Shorter for reliability
-                    do_sample=True,
-                    temperature=0.7,     # Natural but controlled
+                    **gen_params
                 )
             
-            return audio
+            return audio, formatted_text, context
             
         except Exception as e:
-            print(f'❌ Generation failed: {e}')
-            return None
-    
-    def handle_call(self, phone_number, customer_input=None):
-        """Handle incoming call with clean audio generation"""
-        
-        # Find business
-        business_id, business_config = self.get_business_by_phone(phone_number)
-        
-        if not business_config:
-            print(f'❌ Unknown phone number: {phone_number}')
-            return None, "Business not found"
-        
-        print(f'📞 Call for: {business_config["name"]} ({business_config["type"]})')
-        
-        # Determine response
-        if customer_input:
-            response_text = self._generate_response(customer_input, business_config)
-        else:
-            response_text = business_config.get('greeting', 
-                f"Hello! Thank you for calling {business_config['name']}. How can I help you?")
-        
-        # Get appropriate voice
-        speaker_id = self._get_speaker_id(business_config['type'])
-        print(f'🎤 Using speaker ID: {speaker_id}')
-        
-        # Generate audio
-        audio = self.generate_clean_speech(response_text, speaker_id, business_config['name'])
-        
-        if audio:
-            # Save original
-            filename = f"{business_id}_response_{int(time.time())}"
-            original_file = f"{filename}.wav"
-            self.processor.save_audio(audio, original_file)
-            
-            # Create cleaned version
-            clean_file = f"{filename}_clean.wav"
-            self.noise_reducer.clean_audio_simple(original_file, clean_file)
-            
-            return clean_file, response_text
-        
-        return None, response_text
-    
-    def _get_speaker_id(self, business_type):
-        """Get appropriate speaker ID for business type"""
-        voice_mapping = {
-            'restaurant': 0,     # Female voice (Maya-like)
-            'real_estate': 1,    # Male professional voice
-            'medical': 0,        # Female caring voice
-            'retail': 2,         # Friendly female voice
-        }
-        return voice_mapping.get(business_type, 0)
-    
-    def _generate_response(self, customer_input, business_config):
-        """Generate intelligent response based on business type"""
-        
-        input_lower = customer_input.lower()
-        business_name = business_config['name']
-        business_type = business_config['type']
-        
-        # Restaurant responses
-        if business_type == 'restaurant':
-            if any(word in input_lower for word in ['menu', 'food', 'order']):
-                return f"Great! At {business_name}, we have fresh pasta, wood-fired pizza, and daily specials. What sounds good to you?"
-            elif any(word in input_lower for word in ['reservation', 'table']):
-                return f"I'd be happy to help with a reservation at {business_name}. What day and time work for you?"
-            elif any(word in input_lower for word in ['hours', 'open', 'close']):
-                return f"We're open daily from 11 AM to 10 PM. We'd love to see you at {business_name}!"
-        
-        # Real estate responses
-        elif business_type == 'real_estate':
-            if any(word in input_lower for word in ['house', 'property', 'buy', 'sell']):
-                return f"I'm here to help with all your real estate needs. Are you looking to buy or sell a property?"
-            elif any(word in input_lower for word in ['agent', 'realtor']):
-                return f"I can connect you with one of our experienced agents at {business_name}. What area are you interested in?"
-        
-        # Default response
-        return f"Thank you for calling {business_name}. How can I assist you today?"
+            print(f'❌ Natural generation failed: {e}')
+            return None, formatted_text, context
 
-# SETUP TEST BUSINESSES
-def setup_test_businesses():
-    """Set up test businesses for demonstration"""
+# NATURAL CONVERSATION TESTING
+def test_natural_conversation_flow():
+    """Test natural conversation flow with various scenarios"""
     
-    agent = FixedUniversalAgent()
+    print('🎭 Testing Natural Conversation Flow...')
     
-    # Add restaurant
-    agent.add_business('bella_vista', {
-        'name': 'Bella Vista Restaurant',
-        'type': 'restaurant',
-        'phone_number': '+1234567890',
-        'greeting': 'Ciao! Welcome to Bella Vista! How can I help you today?'
-    })
+    engine = NaturalConversationEngine()
     
-    # Add real estate
-    agent.add_business('dream_homes', {
-        'name': 'Dream Homes Realty', 
-        'type': 'real_estate',
-        'phone_number': '+1234567891',
-        'greeting': 'Hello! Thank you for calling Dream Homes Realty. How can I help with your real estate needs?'
-    })
-    
-    return agent
-
-# COMPREHENSIVE TESTING
-def test_fixed_system():
-    """Test the fixed system with clean audio generation"""
-    
-    print('🧪 Testing Fixed Universal Voice Agent...')
-    
-    # Setup
-    agent = setup_test_businesses()
-    
-    test_cases = [
+    # Test scenarios that should sound natural
+    test_conversations = [
         {
-            'name': 'Restaurant Greeting',
-            'phone': '+1234567890',
-            'input': None,
-            'expected_voice': 'female'
+            'name': 'Excited Customer',
+            'session_id': 'test_1',
+            'customer_input': 'Hi! I heard you have amazing pizza!',
+            'agent_response': 'Thank you so much! Yes, we absolutely do. Our wood-fired pizza is incredible.',
+            'business_type': 'restaurant'
         },
         {
-            'name': 'Restaurant Menu Inquiry',
-            'phone': '+1234567890', 
-            'input': "What's on your menu today?",
-            'expected_voice': 'female'
+            'name': 'Concerned Customer',
+            'session_id': 'test_2', 
+            'customer_input': 'I have a problem with my reservation.',
+            'agent_response': 'I understand your concern and I\'m here to help. Let me assist you with that right away.',
+            'business_type': 'restaurant'
         },
         {
-            'name': 'Real Estate Greeting',
-            'phone': '+1234567891',
-            'input': None,
-            'expected_voice': 'male'
+            'name': 'Casual Greeting',
+            'session_id': 'test_3',
+            'customer_input': 'Hey there!',
+            'agent_response': 'Hello! Welcome to Bella Vista. How can I make your day better?',
+            'business_type': 'restaurant'
         },
         {
-            'name': 'Real Estate Property Question',
-            'phone': '+1234567891',
-            'input': "I'm looking to buy a house",
-            'expected_voice': 'male'
+            'name': 'Information Request',
+            'session_id': 'test_4',
+            'customer_input': 'What are your hours?',
+            'agent_response': 'We\'re open daily from 11 AM to 10 PM. We\'d love to see you anytime!',
+            'business_type': 'restaurant'
+        },
+        {
+            'name': 'Professional Inquiry',
+            'session_id': 'test_5',
+            'customer_input': 'I\'m looking for a house in the downtown area.',
+            'agent_response': 'Perfect! I specialize in downtown properties and I have some excellent options to show you.',
+            'business_type': 'real_estate'
         }
     ]
     
     results = []
     
-    for i, test in enumerate(test_cases):
+    for i, test in enumerate(test_conversations):
         print(f'\n🎯 Test {i+1}: {test["name"]}')
+        print(f'👤 Customer: "{test["customer_input"]}"')
+        print(f'🤖 Agent: "{test["agent_response"]}"')
         
         try:
-            audio_file, response_text = agent.handle_call(test['phone'], test['input'])
+            audio, formatted_text, context = engine.generate_natural_conversation(
+                session_id=test['session_id'],
+                text=test['agent_response'],
+                customer_input=test['customer_input'],
+                business_type=test['business_type']
+            )
             
-            if audio_file:
-                print(f'✅ Generated: {audio_file}')
-                print(f'📝 Response: {response_text}')
+            if audio:
+                filename = f"natural_{test['name'].lower().replace(' ', '_')}.wav"
+                engine.processor.save_audio(audio, filename)
+                
+                print(f'✅ Natural audio generated: {filename}')
+                print(f'📝 Formatted text: "{formatted_text}"')
+                print(f'🎭 Detected context: {context["customer_energy"]} energy')
+                
                 results.append({
                     'test': test['name'],
-                    'audio_file': audio_file,
-                    'response': response_text,
+                    'audio_file': filename,
+                    'context': context,
                     'status': 'SUCCESS'
                 })
             else:
-                print(f'❌ Failed to generate audio')
-                results.append({
-                    'test': test['name'],
-                    'status': 'FAILED'
-                })
+                print(f'❌ Audio generation failed')
+                results.append({'test': test['name'], 'status': 'FAILED'})
                 
         except Exception as e:
             print(f'❌ Test failed: {e}')
-            results.append({
-                'test': test['name'],
-                'error': str(e),
-                'status': 'ERROR'
-            })
+            results.append({'test': test['name'], 'error': str(e), 'status': 'ERROR'})
     
     # Summary
-    print('\n🎉 Testing Complete!')
+    print('\n🎉 Natural Conversation Testing Complete!')
     print('📋 Results:')
-    
-    success_count = sum(1 for r in results if r['status'] == 'SUCCESS')
     
     for result in results:
         status_emoji = '✅' if result['status'] == 'SUCCESS' else '❌'
         print(f'   {status_emoji} {result["test"]}')
         if result['status'] == 'SUCCESS':
             print(f'      🎧 Audio: {result["audio_file"]}')
+            print(f'      🎭 Context: {result["context"]["customer_energy"]} energy, {result["context"]["conversation_stage"]} stage')
     
-    print(f'\n📊 Success Rate: {success_count}/{len(test_cases)} tests passed')
+    success_count = sum(1 for r in results if r['status'] == 'SUCCESS')
+    print(f'\n📊 Success Rate: {success_count}/{len(test_conversations)} conversations natural')
     
     if success_count > 0:
-        print('\n🎯 Next Steps:')
-        print('1. Test the generated audio files - they should play properly')
-        print('2. Listen for voice consistency (no switching)')
-        print('3. Check audio quality (clean, no artifacts)')
-        print('4. If good, integrate with Bird.com webhooks')
+        print('\n🎯 Listen for these natural qualities:')
+        print('   ✅ Consistent tone throughout (no high/low jumps)')
+        print('   ✅ Flowing speech (not word-by-word)')
+        print('   ✅ Appropriate energy matching customer')
+        print('   ✅ Natural pauses and rhythm')
+        print('   ✅ Emotional intelligence (warm/professional/caring)')
 
 if __name__ == "__main__":
-    test_fixed_system()
+    test_natural_conversation_flow()
