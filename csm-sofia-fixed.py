@@ -1,4 +1,4 @@
-@"
+
 import torch
 from transformers import AutoProcessor, CsmForConditionalGeneration
 import torchaudio
@@ -92,6 +92,3 @@ except Exception as e:
     print(f'❌ CSM error: {e}')
     import traceback
     traceback.print_exc()
-"@ | Out-File -FilePath "csm-sofia-working.py" -Encoding utf8
-
-python csm-sofia-working.py
