@@ -61,12 +61,11 @@ class MayaLevelCSM:
     
     def analyze_conversation_context(self, text, customer_input="", session_id="default"):
         """
-        Advanced context analysis based on Sesame research findings:
-        - Conversational context dramatically improves naturalness
-        - Context should include tone, rhythm, and conversation history
+        Advanced context analysis - ENHANCED to use conversation memory for smarter parameters
+        Even though CSM doesn't get audio history, we use text history for parameter optimization
         """
         
-        # Retrieve conversation history
+        # Retrieve conversation history for context analysis
         history = self.conversation_memory.get(session_id, [])
         
         context_analysis = {
@@ -75,10 +74,22 @@ class MayaLevelCSM:
             'emotion': 'neutral',
             'conversation_stage': 'middle',  # beginning/middle/end
             'response_length': 'normal',     # short/normal/long
-            'context_continuity': len(history) > 0
+            'context_continuity': len(history) > 0,
+            'conversation_turns': len(history)
         }
         
         combined_text = f"{text.lower()} {customer_input.lower()}"
+        
+        # 🧠 SMART CONTEXT: Analyze conversation history for better parameters
+        if history:
+            recent_history = " ".join([turn['text'].lower() for turn in history[-3:]])
+            combined_text += " " + recent_history
+            
+            # Detect conversation patterns
+            if any(word in recent_history for word in ['hello', 'hi', 'good morning']):
+                context_analysis['conversation_stage'] = 'beginning'
+            elif any(word in recent_history for word in ['thank you', 'goodbye', 'have a great']):
+                context_analysis['conversation_stage'] = 'end'
         
         # 🎯 ENERGY LEVEL (affects temperature)
         if any(word in combined_text for word in ['amazing', 'fantastic', 'excited', 'awesome', 'love', '!']):
@@ -186,38 +197,21 @@ class MayaLevelCSM:
     
     def build_conversation_context(self, session_id, current_text, customer_input=""):
         """
-        Build conversational context - THE KEY TO MAYA-LEVEL NATURALNESS
-        Research shows context dramatically improves speech quality
+        Build conversational context - FIXED for CSM requirements
+        CSM requires: All messages except last must have text + audio
+        Solution: Use simple single-message approach that works, enhance with context-aware parameters
         """
         
-        # Get conversation history
+        # 🔧 FIXED: Use simple conversation format that works with CSM
+        # Keep context awareness through parameter adaptation instead of message history
+        conversation = [
+            {"role": "0", "content": [{"type": "text", "text": current_text}]}
+        ]
+        
+        # 💡 SMART CONTEXT: We still track conversation for parameter adaptation
+        # Even though we don't send audio history, we use it for smarter temperature/tokens
         if session_id not in self.conversation_memory:
             self.conversation_memory[session_id] = []
-        
-        history = self.conversation_memory[session_id]
-        
-        # Build context conversation format
-        conversation = []
-        
-        # Add recent conversation history (last 3-4 turns for optimal context)
-        for turn in history[-self.max_context_turns:]:
-            conversation.append({
-                "role": str(turn['speaker']),
-                "content": [{"type": "text", "text": turn['text']}]
-            })
-        
-        # Add customer input if provided (important for context)
-        if customer_input:
-            conversation.append({
-                "role": "1",  # Customer
-                "content": [{"type": "text", "text": customer_input}]
-            })
-        
-        # Add current response
-        conversation.append({
-            "role": "0",  # Maya
-            "content": [{"type": "text", "text": current_text}]
-        })
         
         return conversation
     
@@ -285,13 +279,34 @@ class MayaLevelCSM:
                 if isinstance(audio[0], torch.Tensor):
                     audio = audio[0]
                 else:
-                    print("⚠️ Unexpected audio format")
+                    print("⚠️ Unexpected audio format, trying direct use")
+                    audio = audio
                     
             return audio, enhanced_text, context_analysis, generation_params
             
         except Exception as e:
             print(f'❌ Maya generation failed: {e}')
-            return None, enhanced_text, context_analysis, generation_params
+            print('🔄 Trying fallback approach...')
+            
+            # FALLBACK: Use your original working method
+            try:
+                simple_inputs = self.processor(enhanced_text, add_special_tokens=True).to(self.device)
+                
+                with torch.no_grad():
+                    fallback_audio = self.model.generate(
+                        **simple_inputs, 
+                        output_audio=True,
+                        max_new_tokens=generation_params['max_new_tokens'],
+                        temperature=generation_params['temperature'],
+                        do_sample=generation_params['do_sample']
+                    )
+                
+                print('✅ Fallback generation successful')
+                return fallback_audio, enhanced_text, context_analysis, generation_params
+                
+            except Exception as e2:
+                print(f'❌ Even fallback failed: {e2}')
+                return None, enhanced_text, context_analysis, generation_params
 
 # 🎤 MAYA-LEVEL AUDIO PROCESSOR
 class MayaAudioProcessor:
@@ -408,9 +423,16 @@ def test_maya_optimization():
                     
                     # Save with descriptive filename
                     filename = f"maya_optimized_{scenario['name']}.wav"
-                    maya.processor.save_audio(processed_audio, filename)
                     
-                    print(f'✅ Generated: {filename}')
+                    try:
+                        maya.processor.save_audio(processed_audio, filename)
+                        print(f'✅ Generated: {filename}')
+                    except Exception as save_error:
+                        print(f'⚠️ Audio save issue: {save_error}, trying alternative...')
+                        # Try saving original audio
+                        maya.processor.save_audio(audio, filename)
+                        print(f'✅ Generated (original): {filename}')
+                    
                     print(f'📝 Enhanced: "{enhanced_text}"')
                     print(f'🎛️ Settings: temp={params["temperature"]}, tokens={params["max_new_tokens"]}')
                     print(f'🎭 Context: {context["emotion"]} energy, {context["conversation_stage"]} stage')
@@ -423,8 +445,8 @@ def test_maya_optimization():
                         'status': 'SUCCESS'
                     })
                 else:
-                    print(f'❌ Audio generation failed')
-                    results.append({'test': scenario['name'], 'status': 'FAILED'})
+                    print(f'❌ Audio generation returned None')
+                    results.append({'test': scenario['name'], 'status': 'FAILED', 'reason': 'No audio generated'})
                     
             except Exception as e:
                 print(f'❌ Test failed: {e}')
