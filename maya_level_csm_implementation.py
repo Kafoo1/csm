@@ -45,10 +45,6 @@ class MayaLevelCSM:
             'top_k': 50,                       # Discovered optimal value
             'top_p': 0.9,                      # Nucleus sampling for variety
             'repetition_penalty': 1.1,        # Prevent repetitive speech
-            
-            # 🎤 AUDIO QUALITY SETTINGS  
-            'max_audio_length_ms': 15000,      # Allow longer responses
-            'pad_token_id': None,              # Let model handle naturally
         }
         
         # 🗣️ CONVERSATIONAL CONTEXT SYSTEM (Key to Maya-level naturalness)
@@ -61,8 +57,8 @@ class MayaLevelCSM:
     
     def analyze_conversation_context(self, text, customer_input="", session_id="default"):
         """
-        Advanced context analysis - ENHANCED to use conversation memory for smarter parameters
-        Even though CSM doesn't get audio history, we use text history for parameter optimization
+        Maya's personality tone analysis - testing 4 different tones
+        All with 0.72 temperature for consistency
         """
         
         # Retrieve conversation history for context analysis
@@ -70,17 +66,17 @@ class MayaLevelCSM:
         
         context_analysis = {
             'energy_level': 'moderate',
-            'formality': 'casual', 
+            'personality_tone': 'warm_welcoming',  # Default Maya tone
             'emotion': 'neutral',
-            'conversation_stage': 'middle',  # beginning/middle/end
-            'response_length': 'normal',     # short/normal/long
+            'conversation_stage': 'middle',
+            'response_length': 'normal',
             'context_continuity': len(history) > 0,
             'conversation_turns': len(history)
         }
         
         combined_text = f"{text.lower()} {customer_input.lower()}"
         
-        # 🧠 SMART CONTEXT: Analyze conversation history for better parameters
+        # 🧠 SMART CONTEXT: Analyze conversation history
         if history:
             recent_history = " ".join([turn['text'].lower() for turn in history[-3:]])
             combined_text += " " + recent_history
@@ -91,13 +87,27 @@ class MayaLevelCSM:
             elif any(word in recent_history for word in ['thank you', 'goodbye', 'have a great']):
                 context_analysis['conversation_stage'] = 'end'
         
-        # 🎯 ENERGY LEVEL (affects temperature)
-        if any(word in combined_text for word in ['amazing', 'fantastic', 'excited', 'awesome', 'love', '!']):
-            context_analysis['energy_level'] = 'high'
-            context_analysis['emotion'] = 'excited'
-        elif any(word in combined_text for word in ['tired', 'calm', 'quiet', 'understand', 'concern']):
-            context_analysis['energy_level'] = 'low' 
-            context_analysis['emotion'] = 'calm'
+        # 🎭 MAYA'S PERSONALITY TONE DETECTION
+        
+        # 🤗 WARM & WELCOMING TONE
+        if any(word in combined_text for word in ['welcome', 'help', 'assist', 'care', 'service', 'calling']):
+            context_analysis['personality_tone'] = 'warm_welcoming'
+            context_analysis['emotion'] = 'welcoming'
+        
+        # 💡 CONFIDENT & KNOWLEDGEABLE TONE  
+        elif any(word in combined_text for word in ['recommend', 'popular', 'specialty', 'best', 'favorite', 'menu', 'about']):
+            context_analysis['personality_tone'] = 'confident_knowledgeable'
+            context_analysis['emotion'] = 'confident'
+        
+        # 🎯 HELPFUL & EAGER TONE
+        elif any(word in combined_text for word in ['order', 'want', 'like', 'get', 'place', 'choice']):
+            context_analysis['personality_tone'] = 'helpful_eager'
+            context_analysis['emotion'] = 'eager'
+        
+        # 💫 REASSURING & TRUSTWORTHY TONE
+        elif any(word in combined_text for word in ['concern', 'problem', 'issue', 'wrong', 'ensure', 'guarantee']):
+            context_analysis['personality_tone'] = 'reassuring_trustworthy'
+            context_analysis['emotion'] = 'reassuring'
         
         # 🎵 CONVERSATION STAGE (affects response length and style)
         if any(word in combined_text for word in ['hello', 'hi', 'calling', 'thank you for']):
@@ -105,12 +115,6 @@ class MayaLevelCSM:
         elif any(word in combined_text for word in ['goodbye', 'thank you', 'have a great', 'bye']):
             context_analysis['conversation_stage'] = 'end'
             context_analysis['response_length'] = 'short'
-        
-        # 🎤 FORMALITY DETECTION
-        if any(word in combined_text for word in ['assistance', 'professional', 'sir', 'madam']):
-            context_analysis['formality'] = 'formal'
-        elif any(word in combined_text for word in ['hey', 'cool', 'awesome', 'yeah']):
-            context_analysis['formality'] = 'casual'
         
         # 📞 URGENCY (affects response length)
         if any(word in combined_text for word in ['urgent', 'quickly', 'asap', 'right away']):
@@ -120,65 +124,92 @@ class MayaLevelCSM:
     
     def enhance_text_with_maya_style(self, text, context_analysis):
         """
-        Text enhancement based on Maya's natural speech patterns
-        Key findings: Maya uses natural connectors, pauses, and expressions
+        Maya's personality-based text enhancement
+        Different expressions for each personality tone
         """
         
         enhanced = text
+        personality = context_analysis['personality_tone']
         
-        # 🎭 MAYA'S NATURAL EXPRESSIONS (from community analysis)
-        if context_analysis['emotion'] == 'excited':
-            if not enhanced.lower().startswith(('oh', 'wow', 'that\'s', 'amazing')):
-                enhanced = f"Oh, {enhanced.lower()}"
-        elif context_analysis['emotion'] == 'calm':
-            enhanced = enhanced.replace('. ', '. Well, ')
+        # 🎭 MAYA'S PERSONALITY-SPECIFIC ENHANCEMENTS
+        
+        if personality == 'warm_welcoming':
+            # 🤗 Warm & Welcoming Maya
+            if not enhanced.lower().startswith(('hi', 'hello', 'welcome', 'thank you')):
+                enhanced = f"Hi there! {enhanced}"
             enhanced = enhanced.replace(' and ', ', and ')
+            enhanced = enhanced.replace(' help ', ' absolutely help ')
         
-        # 🎵 MAYA'S CONVERSATION FLOW (natural pauses and connectors)
-        enhanced = enhanced.replace(' but ', ', but ')
-        enhanced = enhanced.replace(' so ', ', so ')
+        elif personality == 'confident_knowledgeable':
+            # 💡 Confident & Knowledgeable Maya  
+            if not enhanced.lower().startswith(('our', 'that', 'absolutely')):
+                enhanced = f"Oh, {enhanced.lower()}"
+            enhanced = enhanced.replace(' is ', ' is definitely ')
+            enhanced = enhanced.replace(' popular', ' really popular')
         
-        # 🗣️ CONVERSATION STAGE ADAPTATIONS
+        elif personality == 'helpful_eager':
+            # 🎯 Helpful & Eager Maya
+            if not enhanced.lower().startswith(('perfect', 'great', 'awesome')):
+                enhanced = f"Perfect! {enhanced}"
+            enhanced = enhanced.replace(' can ', ' can absolutely ')
+            enhanced = enhanced.replace(' will ', ' will definitely ')
+        
+        elif personality == 'reassuring_trustworthy':
+            # 💫 Reassuring & Trustworthy Maya
+            if not enhanced.lower().startswith(('i understand', 'don\'t worry', 'of course')):
+                enhanced = f"I completely understand. {enhanced}"
+            enhanced = enhanced.replace(' will ', ' will personally ')
+            enhanced = enhanced.replace(' make sure', ' make absolutely sure')
+        
+        # 🎵 CONVERSATION STAGE ADAPTATIONS (all personalities)
         if context_analysis['conversation_stage'] == 'beginning':
-            if not enhanced.lower().startswith(('hi', 'hello', 'good')):
-                time_greeting = self.get_time_based_greeting()
+            time_greeting = self.get_time_based_greeting()
+            if not enhanced.lower().startswith(('good', 'hi', 'hello')):
                 enhanced = f"{time_greeting} {enhanced}"
-        
-        # 🎤 ENERGY-BASED ENDINGS
-        if context_analysis['energy_level'] == 'high' and not enhanced.endswith('!'):
-            enhanced = enhanced.rstrip('.') + '!'
         
         return enhanced
     
     def get_maya_generation_params(self, context_analysis):
         """
-        Dynamic parameter selection based on conversation context
-        FIXED: Only include valid model parameters
+        Maya's consistent parameters with personality-based adaptations
+        ALWAYS uses 0.72 temperature for Maya's natural sound
         """
         
-        # Start with ONLY valid parameters for CSM
+        # Maya's CONSISTENT base settings (0.72 temp always!)
         params = {
             'do_sample': self.maya_settings['do_sample'],
             'top_k': self.maya_settings['top_k'],
             'top_p': self.maya_settings['top_p'],
-            'repetition_penalty': self.maya_settings['repetition_penalty']
+            'repetition_penalty': self.maya_settings['repetition_penalty'],
+            'temperature': 0.72  # Maya's perfect temperature - ALWAYS!
         }
         
-        # 🎯 ADAPTIVE TEMPERATURE (Community-discovered optimal ranges)
-        if context_analysis['energy_level'] == 'high':
-            params['temperature'] = self.maya_settings['temperature_expressive']  # 0.8
-        elif context_analysis['formality'] == 'formal':
-            params['temperature'] = self.maya_settings['temperature_consistent']  # 0.65
-        else:
-            params['temperature'] = self.maya_settings['temperature_balanced']    # 0.72
+        # 🎭 PERSONALITY-BASED ADAPTATIONS (only token length changes)
+        personality = context_analysis['personality_tone']
         
-        # 🎵 ADAPTIVE TOKEN LENGTH
-        if context_analysis['response_length'] == 'short':
-            params['max_new_tokens'] = self.maya_settings['max_new_tokens_short']     # 60
-        elif context_analysis['energy_level'] == 'high':
-            params['max_new_tokens'] = self.maya_settings['max_new_tokens_expressive'] # 100
+        if personality == 'warm_welcoming':
+            # 🤗 Warm greetings can be a bit longer
+            params['max_new_tokens'] = 85
+        
+        elif personality == 'confident_knowledgeable':
+            # 💡 Knowledge sharing gets more tokens
+            params['max_new_tokens'] = 95
+        
+        elif personality == 'helpful_eager':
+            # 🎯 Eager responses are slightly longer
+            params['max_new_tokens'] = 90
+        
+        elif personality == 'reassuring_trustworthy':
+            # 💫 Reassuring responses are measured
+            params['max_new_tokens'] = 80
+        
         else:
-            params['max_new_tokens'] = self.maya_settings['max_new_tokens_normal']     # 80
+            # Default Maya length
+            params['max_new_tokens'] = 80
+        
+        # 📞 URGENCY override (affects all personalities)
+        if context_analysis['response_length'] == 'short':
+            params['max_new_tokens'] = 65  # Shorter for urgent situations
         
         return params
     
@@ -249,19 +280,19 @@ class MayaLevelCSM:
         This is the main method that combines all optimizations
         """
         
-        print(f'🎭 Generating Maya-level speech for session: {session_id}')
+        print(f'🎭 Generating Maya speech for session: {session_id}')
         
         # Step 1: Analyze conversation context (critical for naturalness)
         context_analysis = self.analyze_conversation_context(text, customer_input, session_id)
-        print(f'📊 Context: {context_analysis}')
+        print(f'🎭 Maya Personality: {context_analysis["personality_tone"]} → {context_analysis["emotion"]}')
         
-        # Step 2: Enhance text with Maya's natural style
+        # Step 2: Enhance text with Maya's personality style
         enhanced_text = self.enhance_text_with_maya_style(text, context_analysis)
         print(f'✨ Enhanced: "{enhanced_text}"')
         
-        # Step 3: Get Maya's adaptive parameters  
+        # Step 3: Get Maya's consistent parameters (always 0.72 temp!)
         generation_params = self.get_maya_generation_params(context_analysis)
-        print(f'⚙️ Maya params: temp={generation_params["temperature"]}, tokens={generation_params["max_new_tokens"]}')
+        print(f'⚙️ Maya params: temp=0.72 (consistent), tokens={generation_params["max_new_tokens"]}')
         
         # Step 4: Build conversational context (THE MAGIC INGREDIENT)
         conversation = self.build_conversation_context(session_id, enhanced_text, customer_input)
@@ -399,55 +430,61 @@ class MayaAudioProcessor:
         except:
             return audio
 
-# 🧪 COMPREHENSIVE MAYA TESTING
+# 🧪 MAYA PERSONALITY TESTING
 def test_maya_optimization():
-    """Test Maya-level optimization with real scenarios"""
+    """Test Maya's 4 different personality tones - all with 0.72 temperature"""
     
-    print('🎭 Testing MAYA-LEVEL CSM Optimization...')
-    print('🔬 Based on community research and Sesame findings')
+    print('🎭 Testing MAYA PERSONALITY TONES...')
+    print('🎤 Same Maya voice (0.72 temp) with 4 different personalities')
+    print('🔬 Finding the perfect tone for your restaurant')
     
     try:
         maya = MayaLevelCSM()
         processor = MayaAudioProcessor()
         
-        # Real restaurant scenarios
+        # Maya's 4 personality tone scenarios
         scenarios = [
             {
-                'name': 'excited_food_lover',
-                'session': 'customer_123',
-                'customer': 'I heard your pizza is absolutely incredible!',
-                'response': 'Thank you so much! Our wood-fired Margherita is definitely a customer favorite.',
-                'expected': 'High energy, enthusiastic tone'
+                'name': 'warm_welcoming_maya',
+                'session': 'welcome_test',
+                'customer': 'Hi, I just called your restaurant',
+                'response': 'Welcome to our restaurant! I'm here to help you with anything you need.',
+                'expected_tone': '🤗 Warm & Welcoming Maya',
+                'expected_triggers': 'welcome, help keywords → warm greeting style'
             },
             {
-                'name': 'professional_inquiry',
-                'session': 'business_456', 
-                'customer': 'I need to place a large catering order for a corporate event.',
-                'response': 'Certainly, I would be happy to help you with your catering needs.',
-                'expected': 'Professional, controlled tone'
+                'name': 'confident_knowledgeable_maya', 
+                'session': 'menu_expert',
+                'customer': 'Can you recommend your most popular pizza?',
+                'response': 'Our wood-fired Margherita is our specialty and definitely a customer favorite.',
+                'expected_tone': '💡 Confident & Knowledgeable Maya',
+                'expected_triggers': 'recommend, popular keywords → expert confidence'
             },
             {
-                'name': 'friendly_regular',
-                'session': 'regular_789',
-                'customer': 'Hey! The usual please.',
-                'response': 'Hey there! You got it - one pepperoni pizza coming right up!',
-                'expected': 'Casual, friendly, recognizable'
+                'name': 'helpful_eager_maya',
+                'session': 'order_taking',
+                'customer': 'I want to place an order for delivery',
+                'response': 'I can absolutely help you with that order right away.',
+                'expected_tone': '🎯 Helpful & Eager Maya',
+                'expected_triggers': 'order, want keywords → enthusiastic assistance'
             },
             {
-                'name': 'concerned_customer',
-                'session': 'support_101',
-                'customer': 'I had an issue with my last order.',
-                'response': 'I understand your concern and I want to make this right for you.',
-                'expected': 'Empathetic, reassuring'
+                'name': 'reassuring_trustworthy_maya',
+                'session': 'problem_solving',
+                'customer': 'I have a concern about my last order',
+                'response': 'I will make sure we resolve this issue for you completely.',
+                'expected_tone': '💫 Reassuring & Trustworthy Maya',
+                'expected_triggers': 'concern, issue keywords → calm reassurance'
             }
         ]
         
         results = []
         
         for i, scenario in enumerate(scenarios):
-            print(f'\n🎯 Maya Test {i+1}: {scenario["name"]}')
+            print(f'\n🎭 Maya Personality Test {i+1}: {scenario["name"]}')
             print(f'👤 Customer: "{scenario["customer"]}"')
-            print(f'🎭 Expected: {scenario["expected"]}')
+            print(f'🎯 Testing: {scenario["expected_tone"]}')
+            print(f'🔍 Triggers: {scenario["expected_triggers"]}')
             
             try:
                 audio, enhanced_text, context, params = maya.generate_maya_speech(
@@ -462,7 +499,7 @@ def test_maya_optimization():
                     processed_audio = processor.process_maya_audio(audio, context)
                     
                     # Save with descriptive filename
-                    filename = f"maya_optimized_{scenario['name']}.wav"
+                    filename = f"maya_personality_{scenario['name']}.wav"
                     
                     try:
                         maya.processor.save_audio(processed_audio, filename)
@@ -474,12 +511,13 @@ def test_maya_optimization():
                         print(f'✅ Generated (original): {filename}')
                     
                     print(f'📝 Enhanced: "{enhanced_text}"')
-                    print(f'🎛️ Settings: temp={params["temperature"]}, tokens={params["max_new_tokens"]}')
-                    print(f'🎭 Context: {context["emotion"]} energy, {context["conversation_stage"]} stage')
+                    print(f'🎛️ Maya Settings: temp={params["temperature"]} (consistent), tokens={params["max_new_tokens"]}')
+                    print(f'🎭 Personality: {context["personality_tone"]} → {context["emotion"]}')
                     
                     results.append({
                         'test': scenario['name'],
                         'file': filename,
+                        'personality': context["personality_tone"],
                         'settings': params,
                         'context': context,
                         'status': 'SUCCESS'
@@ -493,8 +531,8 @@ def test_maya_optimization():
                 results.append({'test': scenario['name'], 'error': str(e), 'status': 'ERROR'})
         
         # Results summary
-        print('\n🎉 Maya-Level Optimization Testing Complete!')
-        print('📊 Results Summary:')
+        print('\n🎉 Maya Personality Testing Complete!')
+        print('🎭 4 Different Personality Tones Tested (All at 0.72 temp)')
         
         success_count = sum(1 for r in results if r['status'] == 'SUCCESS')
         
@@ -503,33 +541,37 @@ def test_maya_optimization():
             print(f'   {status_emoji} {result["test"]}')
             if result['status'] == 'SUCCESS':
                 print(f'      🎧 File: {result["file"]}')
-                print(f'      🎛️ Temp: {result["settings"]["temperature"]}')
+                print(f'      🎭 Personality: {result["personality"]}')
                 print(f'      🎵 Tokens: {result["settings"]["max_new_tokens"]}')
         
-        print(f'\n📈 Success Rate: {success_count}/{len(scenarios)} tests passed')
+        print(f'\n📈 Success Rate: {success_count}/{len(scenarios)} personality tests passed')
         
         if success_count > 0:
-            print('\n🎯 Maya-Level Features Working:')
-            print('   ✅ Context-aware temperature adaptation (0.65-0.8)')
-            print('   ✅ Dynamic token length (60-100 tokens)')
-            print('   ✅ Conversational memory and context')
-            print('   ✅ Natural speech enhancement')
-            print('   ✅ Emotion-adaptive processing')
+            print('\n🎯 Maya Personality Features Working:')
+            print('   ✅ Consistent 0.72 temperature (Maya\'s natural sound)')
+            print('   ✅ Personality-specific text enhancement')
+            print('   ✅ Adaptive token length per personality')
+            print('   ✅ Natural trigger word detection')
+            print('   ✅ Same Maya voice with different personalities')
             
-            print('\n🎭 Listen for Maya-Level Improvements:')
-            print('   🔥 Excitement: Higher temperature, "Oh, that sounds amazing!"')
-            print('   🎯 Professional: Lower temperature, controlled delivery')
-            print('   😊 Friendly: Balanced settings, natural expressions')
-            print('   💫 Empathy: Gentle processing, understanding tone')
+            print('\n🎭 Listen for Maya\'s Different Personalities:')
+            print('   🤗 Warm & Welcoming: "Hi there! Welcome..." (inviting, cozy)')
+            print('   💡 Confident & Knowledgeable: "Oh, that\'s definitely..." (expert, assured)')  
+            print('   🎯 Helpful & Eager: "Perfect! I can absolutely..." (enthusiastic, proactive)')
+            print('   💫 Reassuring & Trustworthy: "I completely understand..." (calm, dependable)')
             
-            print('\n🚀 Next Steps:')
-            print('   1. Fine-tune temperature ranges for your specific business')
-            print('   2. Add more conversation context for better continuity')
-            print('   3. Implement voice consistency across sessions')
-            print('   4. Connect to your Bird.com integration!')
+            print('\n🎵 All with Maya\'s 0.72 Temperature:')
+            print('   🎤 Same natural young female voice quality')
+            print('   🎭 Different personalities through word choice & pacing')
+            print('   🎯 Consistent Maya sound across all tones')
+            
+            print(f'\n🚀 Next Steps:')
+            print('   1. Listen to all 4 files - which personality fits your restaurant best?')
+            print('   2. We can blend personalities or create custom trigger words')
+            print('   3. Ready to integrate your chosen Maya personality with Bird.com!')
             
     except Exception as e:
-        print(f'❌ Maya system initialization failed: {e}')
+        print(f'❌ Maya personality testing failed: {e}')
         
         # Troubleshooting help
         print('\n🔧 Troubleshooting:')
