@@ -153,16 +153,15 @@ class MayaLevelCSM:
     def get_maya_generation_params(self, context_analysis):
         """
         Dynamic parameter selection based on conversation context
-        This is where the magic happens - Maya adapts to the conversation!
+        FIXED: Only include valid model parameters
         """
         
-        # Start with base Maya settings
+        # Start with ONLY valid parameters for CSM
         params = {
             'do_sample': self.maya_settings['do_sample'],
             'top_k': self.maya_settings['top_k'],
             'top_p': self.maya_settings['top_p'],
-            'repetition_penalty': self.maya_settings['repetition_penalty'],
-            'max_audio_length_ms': self.maya_settings['max_audio_length_ms']
+            'repetition_penalty': self.maya_settings['repetition_penalty']
         }
         
         # 🎯 ADAPTIVE TEMPERATURE (Community-discovered optimal ranges)
@@ -215,6 +214,20 @@ class MayaLevelCSM:
         
         return conversation
     
+    def _handle_audio_output(self, audio):
+        """Handle different audio output formats from CSM"""
+        if isinstance(audio, list):
+            if len(audio) > 0 and isinstance(audio[0], torch.Tensor):
+                return audio[0]
+            else:
+                print("⚠️ Unexpected audio list format")
+                return audio
+        elif isinstance(audio, torch.Tensor):
+            return audio
+        else:
+            print(f"⚠️ Unknown audio format: {type(audio)}")
+            return audio
+    
     def update_conversation_memory(self, session_id, speaker, text):
         """Update conversation memory for context continuity"""
         if session_id not in self.conversation_memory:
@@ -254,7 +267,7 @@ class MayaLevelCSM:
         conversation = self.build_conversation_context(session_id, enhanced_text, customer_input)
         
         try:
-            # Step 5: Generate with OPTIMAL SETTINGS
+            # Step 5: Generate with OPTIMAL SETTINGS - FIXED to match working approach
             inputs = self.processor.apply_chat_template(
                 conversation,
                 tokenize=True,
@@ -265,7 +278,12 @@ class MayaLevelCSM:
                 audio = self.model.generate(
                     **inputs,
                     output_audio=True,
-                    **generation_params  # Use Maya's optimized parameters
+                    max_new_tokens=generation_params['max_new_tokens'],
+                    temperature=generation_params['temperature'],
+                    do_sample=generation_params['do_sample'],
+                    top_k=generation_params['top_k'],
+                    top_p=generation_params['top_p'],
+                    repetition_penalty=generation_params['repetition_penalty']
                 )
             
             # Step 6: Update conversation memory for future context
@@ -273,24 +291,20 @@ class MayaLevelCSM:
             if customer_input:
                 self.update_conversation_memory(session_id, 1, customer_input)
             
-            # Step 7: Handle audio output properly 
-            if isinstance(audio, list) and len(audio) > 0:
-                # Convert list to tensor if needed
-                if isinstance(audio[0], torch.Tensor):
-                    audio = audio[0]
-                else:
-                    print("⚠️ Unexpected audio format, trying direct use")
-                    audio = audio
-                    
-            return audio, enhanced_text, context_analysis, generation_params
+            # Step 7: Handle audio output properly
+            processed_audio = self._handle_audio_output(audio)
+            
+            return processed_audio, enhanced_text, context_analysis, generation_params
             
         except Exception as e:
             print(f'❌ Maya generation failed: {e}')
-            print('🔄 Trying fallback approach...')
+            print('🔄 Trying simplified fallback approach...')
             
-            # FALLBACK: Use your original working method
+            # FALLBACK: Use the exact method that works (simplified input)
             try:
-                simple_inputs = self.processor(enhanced_text, add_special_tokens=True).to(self.device)
+                # Use exact format that worked in original implementation
+                text_input = f"[0]{enhanced_text}"  # Speaker 0 format
+                simple_inputs = self.processor(text_input, add_special_tokens=True, return_tensors="pt").to(self.device)
                 
                 with torch.no_grad():
                     fallback_audio = self.model.generate(
@@ -302,11 +316,30 @@ class MayaLevelCSM:
                     )
                 
                 print('✅ Fallback generation successful')
-                return fallback_audio, enhanced_text, context_analysis, generation_params
+                processed_fallback = self._handle_audio_output(fallback_audio)
+                return processed_fallback, enhanced_text, context_analysis, generation_params
                 
             except Exception as e2:
-                print(f'❌ Even fallback failed: {e2}')
-                return None, enhanced_text, context_analysis, generation_params
+                print(f'❌ Fallback failed: {e2}')
+                print('🔄 Trying most basic approach...')
+                
+                # ULTRA-SIMPLE fallback
+                try:
+                    basic_conversation = [{"role": "0", "content": [{"type": "text", "text": text}]}]  # Use original text
+                    basic_inputs = self.processor.apply_chat_template(
+                        basic_conversation, tokenize=True, return_dict=True
+                    ).to(self.device)
+                    
+                    with torch.no_grad():
+                        basic_audio = self.model.generate(**basic_inputs, output_audio=True, max_new_tokens=60)
+                    
+                    print('✅ Basic generation successful')
+                    processed_basic = self._handle_audio_output(basic_audio)
+                    return processed_basic, text, context_analysis, generation_params
+                    
+                except Exception as e3:
+                    print(f'❌ All methods failed: {e3}')
+                    return None, enhanced_text, context_analysis, generation_params
 
 # 🎤 MAYA-LEVEL AUDIO PROCESSOR
 class MayaAudioProcessor:
@@ -315,10 +348,17 @@ class MayaAudioProcessor:
     def process_maya_audio(self, audio_tensor, context_analysis):
         """Process audio with Maya-level quality optimizations"""
         
+        # Handle different audio formats
+        if isinstance(audio_tensor, list):
+            if len(audio_tensor) > 0 and isinstance(audio_tensor[0], torch.Tensor):
+                audio_tensor = audio_tensor[0]
+            else:
+                print(f'⚠️ Unexpected audio list format, using as-is')
+                return audio_tensor
+        
         if not isinstance(audio_tensor, torch.Tensor):
-            print(f'⚠️ Audio conversion needed: {type(audio_tensor)}')
-            if isinstance(audio_tensor, list) and len(audio_tensor) > 0:
-                audio_tensor = audio_tensor[0] if isinstance(audio_tensor[0], torch.Tensor) else audio_tensor
+            print(f'⚠️ Audio is not a tensor: {type(audio_tensor)}, returning as-is')
+            return audio_tensor
             
         try:
             # Maya-level processing
