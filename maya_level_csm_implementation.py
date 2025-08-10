@@ -448,7 +448,7 @@ def test_maya_optimization():
                 'name': 'warm_welcoming_maya',
                 'session': 'welcome_test',
                 'customer': 'Hi, I just called your restaurant',
-                'response': 'Welcome to our restaurant! I'm here to help you with anything you need.',
+                'response': 'Welcome to our restaurant! How can I assist you today?',
                 'expected_tone': '🤗 Warm & Welcoming Maya',
                 'expected_triggers': 'welcome, help keywords → warm greeting style'
             },
@@ -477,6 +477,7 @@ def test_maya_optimization():
                 'expected_triggers': 'concern, issue keywords → calm reassurance'
             }
         ]
+        
         
         results = []
         
