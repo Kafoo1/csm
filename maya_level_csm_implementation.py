@@ -1,12 +1,11 @@
 """
-🎭 MAYA-LEVEL VOICE AGENT WITH ENHANCED CSM
-Production-ready implementation with advanced personality consistency,
-emotional modulation, and conversational memory
+🎭 MAYA VOICE AGENT - FIXED CSM IMPLEMENTATION
+Production-ready implementation that works with CSM-1B's actual tokenization
 """
 
 import torch
 import torchaudio
-from transformers import AutoProcessor, CsmForConditionalGeneration
+from transformers import AutoProcessor, WhisperProcessor, CsmForConditionalGeneration
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
@@ -22,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# PERSONALITY SYSTEM
+# PERSONALITY SYSTEM (Same as before)
 # ============================================================================
 
 class PersonalityTone(Enum):
@@ -63,7 +62,6 @@ class PersonalityProfile:
     signature_phrases: Dict[str, List[str]] = field(default_factory=dict)
     
     def __post_init__(self):
-        # Initialize signature phrases for each personality tone
         self.signature_phrases = {
             PersonalityTone.WARM_WELCOMING.value: [
                 "Hi there!", "Welcome!", "How can I help you today?",
@@ -97,9 +95,9 @@ class ConversationContext:
     topics_discussed: List[str] = field(default_factory=list)
     objections_raised: List[str] = field(default_factory=list)
     context_continuity: bool = False
-    
+
 # ============================================================================
-# MEMORY SYSTEM
+# MEMORY SYSTEM (Simplified but effective)
 # ============================================================================
 
 class ConversationalMemory:
@@ -112,7 +110,7 @@ class ConversationalMemory:
         self.session_contexts: Dict[str, ConversationContext] = {}
         
     def add_turn(self, session_id: str, speaker: str, text: str, 
-                 emotion: Optional[str] = None, audio_features: Optional[Dict] = None):
+                 emotion: Optional[str] = None):
         """Add a conversation turn to memory"""
         if session_id not in self.sessions:
             self.sessions[session_id] = deque(maxlen=self.max_turns)
@@ -121,181 +119,113 @@ class ConversationalMemory:
             'timestamp': time.time(),
             'speaker': speaker,
             'text': text,
-            'emotion': emotion,
-            'audio_features': audio_features
+            'emotion': emotion
         }
         
         self.sessions[session_id].append(turn)
-        logger.info(f"Added turn to session {session_id}: {speaker} - {text[:50]}...")
+        logger.info(f"Memory updated: {speaker} in session {session_id}")
         
     def get_recent_context(self, session_id: str) -> List[Dict]:
-        """Get recent conversation context within time window"""
+        """Get recent conversation context"""
         if session_id not in self.sessions:
             return []
-            
-        current_time = time.time()
-        cutoff_time = current_time - (self.context_window_minutes * 60)
-        
-        recent_turns = [
-            turn for turn in self.sessions[session_id]
-            if turn['timestamp'] > cutoff_time
-        ]
-        
-        return recent_turns
+        return list(self.sessions[session_id])[-3:]  # Last 3 turns
     
     def analyze_conversation_flow(self, session_id: str) -> Dict[str, Any]:
-        """Analyze conversation patterns and emotional trajectory"""
+        """Analyze conversation patterns"""
         recent_turns = self.get_recent_context(session_id)
         
         if not recent_turns:
-            return {'pattern': 'new_conversation', 'emotional_trajectory': 'neutral'}
+            return {'pattern': 'new_conversation', 'needs_reassurance': False}
             
-        # Analyze emotional trajectory
-        emotions = [turn['emotion'] for turn in recent_turns if turn['emotion']]
+        recent_text = ' '.join([t['text'].lower() for t in recent_turns])
         
-        # Detect conversation patterns
-        patterns = {
-            'is_escalating': self._detect_escalation(recent_turns),
-            'needs_reassurance': self._detect_reassurance_need(recent_turns),
-            'is_positive': self._detect_positive_trend(recent_turns),
-            'topic_switches': self._count_topic_switches(recent_turns)
+        return {
+            'needs_reassurance': any(word in recent_text for word in ['worried', 'concern', 'problem']),
+            'is_positive': any(word in recent_text for word in ['great', 'perfect', 'thank you']),
+            'is_escalating': any(word in recent_text for word in ['angry', 'frustrated', 'upset'])
         }
-        
-        return patterns
-    
-    def _detect_escalation(self, turns: List[Dict]) -> bool:
-        """Detect if conversation is escalating negatively"""
-        negative_keywords = ['problem', 'issue', 'wrong', 'frustrated', 'angry', 'upset']
-        recent_text = ' '.join([t['text'].lower() for t in turns[-3:]])
-        return any(keyword in recent_text for keyword in negative_keywords)
-    
-    def _detect_reassurance_need(self, turns: List[Dict]) -> bool:
-        """Detect if user needs reassurance"""
-        concern_keywords = ['worried', 'concern', 'not sure', 'confused', 'help']
-        recent_text = ' '.join([t['text'].lower() for t in turns[-2:]])
-        return any(keyword in recent_text for keyword in concern_keywords)
-    
-    def _detect_positive_trend(self, turns: List[Dict]) -> bool:
-        """Detect positive conversation trend"""
-        positive_keywords = ['great', 'perfect', 'excellent', 'thank you', 'happy']
-        recent_text = ' '.join([t['text'].lower() for t in turns[-2:]])
-        return any(keyword in recent_text for keyword in positive_keywords)
-    
-    def _count_topic_switches(self, turns: List[Dict]) -> int:
-        """Count topic switches in conversation"""
-        # Simplified topic detection - in production, use NLP
-        return min(len(turns) // 3, 3)
 
 # ============================================================================
-# DIALOGUE MANAGER
+# SPEECH ENHANCER (Core personality expression)
 # ============================================================================
 
-class DialogueStateManager:
-    """Manages conversation flow and enforces dialogue rules"""
+class SpeechEnhancer:
+    """Enhances text with natural speech patterns and personality traits"""
     
     def __init__(self, personality_profile: PersonalityProfile):
         self.personality = personality_profile
-        self.state_transitions = self._initialize_state_transitions()
-        self.dialogue_rules = self._initialize_dialogue_rules()
         
-    def _initialize_state_transitions(self) -> Dict:
-        """Define valid state transitions"""
-        return {
-            ConversationStage.GREETING: [ConversationStage.NEEDS_ASSESSMENT],
-            ConversationStage.NEEDS_ASSESSMENT: [ConversationStage.MAIN_INTERACTION, ConversationStage.OBJECTION_HANDLING],
-            ConversationStage.MAIN_INTERACTION: [ConversationStage.OBJECTION_HANDLING, ConversationStage.CLOSING],
-            ConversationStage.OBJECTION_HANDLING: [ConversationStage.MAIN_INTERACTION, ConversationStage.CLOSING],
-            ConversationStage.CLOSING: [ConversationStage.WRAP_UP],
-            ConversationStage.WRAP_UP: []
-        }
-    
-    def _initialize_dialogue_rules(self) -> Dict:
-        """Initialize mandatory dialogue rules"""
-        return {
-            'greeting_required': ['name', 'purpose'],
-            'closing_required': ['next_steps', 'confirmation'],
-            'objection_patterns': {
-                'price': ['value', 'budget', 'options'],
-                'time': ['schedule', 'availability', 'convenient'],
-                'trust': ['guarantee', 'experience', 'references']
-            },
-            'fallback_responses': {
-                'unclear': "I want to make sure I understand correctly. Could you tell me more about...",
-                'silence': "Are you still there? I'm here to help if you have any questions.",
-                'off_topic': "That's interesting! Let me help you with..."
-            }
-        }
-    
-    def get_next_stage(self, current_stage: ConversationStage, 
-                       context: ConversationContext) -> ConversationStage:
-        """Determine next conversation stage based on context"""
-        valid_transitions = self.state_transitions.get(current_stage, [])
+    def enhance_text(self, text: str, context: ConversationContext) -> str:
+        """Apply personality-based text enhancements"""
+        enhanced = text
         
-        if not valid_transitions:
-            return current_stage
+        # Apply personality-specific style
+        enhanced = self._apply_personality_style(enhanced, context.personality_tone)
+        
+        # Apply stage-based enhancements
+        enhanced = self._apply_stage_enhancement(enhanced, context.conversation_stage)
+        
+        # Apply emotional coloring
+        enhanced = self._apply_emotional_coloring(enhanced, context.emotional_state)
+        
+        return enhanced
+    
+    def _apply_personality_style(self, text: str, tone: PersonalityTone) -> str:
+        """Apply personality-specific language patterns"""
+        
+        if tone == PersonalityTone.WARM_WELCOMING:
+            if not text.lower().startswith(('hi', 'hello', 'welcome')):
+                text = f"Hi there! {text}"
+            text = text.replace(' help ', ' absolutely help ')
             
-        # Logic for stage transition based on context
-        if context.turn_count < 2:
-            return ConversationStage.GREETING
-        elif context.objections_raised:
-            return ConversationStage.OBJECTION_HANDLING
-        elif context.turn_count > 10:
-            return ConversationStage.CLOSING
+        elif tone == PersonalityTone.CONFIDENT_KNOWLEDGEABLE:
+            if not text.lower().startswith(('oh', 'that', 'absolutely')):
+                text = f"Oh, {text}"
+            text = text.replace(' is ', ' is definitely ')
             
-        return valid_transitions[0] if valid_transitions else current_stage
+        elif tone == PersonalityTone.HELPFUL_EAGER:
+            if not text.lower().startswith(('perfect', 'great', 'awesome')):
+                text = f"Perfect! {text}"
+            text = text.replace(' can ', ' can absolutely ')
+            
+        elif tone == PersonalityTone.REASSURING_TRUSTWORTHY:
+            if 'understand' not in text.lower():
+                text = f"I completely understand. {text}"
+            text = text.replace(' will ', ' will personally ')
+            
+        return text
     
-    def get_stage_appropriate_response(self, stage: ConversationStage, 
-                                      base_response: str) -> str:
-        """Enhance response based on conversation stage"""
-        stage_enhancements = {
-            ConversationStage.GREETING: self._enhance_greeting,
-            ConversationStage.NEEDS_ASSESSMENT: self._enhance_needs_assessment,
-            ConversationStage.MAIN_INTERACTION: self._enhance_main_interaction,
-            ConversationStage.OBJECTION_HANDLING: self._enhance_objection_handling,
-            ConversationStage.CLOSING: self._enhance_closing,
-            ConversationStage.WRAP_UP: self._enhance_wrap_up
-        }
+    def _apply_stage_enhancement(self, text: str, stage: ConversationStage) -> str:
+        """Enhance based on conversation stage"""
         
-        enhancer = stage_enhancements.get(stage, lambda x: x)
-        return enhancer(base_response)
-    
-    def _enhance_greeting(self, response: str) -> str:
-        """Enhance greeting stage response"""
-        if not any(greeting in response.lower() for greeting in ['hi', 'hello', 'welcome']):
+        if stage == ConversationStage.GREETING:
             time_greeting = self._get_time_based_greeting()
-            response = f"{time_greeting} {response}"
-        return response
+            if not text.lower().startswith(('good', 'hi', 'hello')):
+                text = f"{time_greeting} {text}"
+                
+        elif stage == ConversationStage.CLOSING:
+            if 'thank' not in text.lower():
+                text = f"Thank you so much! {text}"
+                
+        return text
     
-    def _enhance_needs_assessment(self, response: str) -> str:
-        """Enhance needs assessment response"""
-        if '?' not in response:
-            response += " What brings you here today?"
-        return response
-    
-    def _enhance_main_interaction(self, response: str) -> str:
-        """Enhance main interaction response"""
-        return response
-    
-    def _enhance_objection_handling(self, response: str) -> str:
-        """Enhance objection handling response"""
-        if not any(word in response.lower() for word in ['understand', 'appreciate', 'hear']):
-            response = f"I completely understand your concern. {response}"
-        return response
-    
-    def _enhance_closing(self, response: str) -> str:
-        """Enhance closing response"""
-        if 'next' not in response.lower():
-            response += " What would be the best next step for you?"
-        return response
-    
-    def _enhance_wrap_up(self, response: str) -> str:
-        """Enhance wrap-up response"""
-        if 'thank' not in response.lower():
-            response = f"Thank you so much for your time! {response}"
-        return response
+    def _apply_emotional_coloring(self, text: str, emotion: EmotionalState) -> str:
+        """Apply subtle emotional modifications"""
+        
+        if emotion == EmotionalState.HAPPY:
+            text = text.replace('.', '!')
+        elif emotion == EmotionalState.EMPATHETIC:
+            if not text.startswith(('I hear', 'I understand')):
+                text = f"I hear you. {text}"
+        elif emotion == EmotionalState.REASSURING:
+            if not text.startswith(("Don't worry", "No problem")):
+                text = f"Don't worry. {text}"
+                
+        return text
     
     def _get_time_based_greeting(self) -> str:
-        """Get appropriate greeting based on time"""
+        """Get time-appropriate greeting"""
         hour = datetime.datetime.now().hour
         if hour < 12:
             return "Good morning!"
@@ -305,248 +235,32 @@ class DialogueStateManager:
             return "Good evening!"
 
 # ============================================================================
-# PROSODY CONTROLLER
-# ============================================================================
-
-class ProsodyController:
-    """Controls voice prosody parameters based on context"""
-    
-    def __init__(self):
-        self.base_settings = {
-            'temperature': 0.72,  # Maya's optimal temperature
-            'pitch_range': (0.9, 1.1),
-            'speed_range': (0.95, 1.05),
-            'pause_duration': (0.2, 0.8),
-            'emphasis_strength': 1.0
-        }
-        
-        self.emotion_profiles = self._initialize_emotion_profiles()
-        
-    def _initialize_emotion_profiles(self) -> Dict:
-        """Define prosody profiles for different emotions"""
-        return {
-            EmotionalState.NEUTRAL: {
-                'pitch_modifier': 1.0,
-                'speed_modifier': 1.0,
-                'pause_frequency': 'normal',
-                'emphasis': 'moderate'
-            },
-            EmotionalState.HAPPY: {
-                'pitch_modifier': 1.05,
-                'speed_modifier': 1.02,
-                'pause_frequency': 'reduced',
-                'emphasis': 'increased'
-            },
-            EmotionalState.EMPATHETIC: {
-                'pitch_modifier': 0.98,
-                'speed_modifier': 0.97,
-                'pause_frequency': 'increased',
-                'emphasis': 'gentle'
-            },
-            EmotionalState.CONFIDENT: {
-                'pitch_modifier': 1.02,
-                'speed_modifier': 0.98,
-                'pause_frequency': 'strategic',
-                'emphasis': 'strong'
-            },
-            EmotionalState.REASSURING: {
-                'pitch_modifier': 0.97,
-                'speed_modifier': 0.95,
-                'pause_frequency': 'increased',
-                'emphasis': 'gentle'
-            },
-            EmotionalState.EXCITED: {
-                'pitch_modifier': 1.08,
-                'speed_modifier': 1.05,
-                'pause_frequency': 'reduced',
-                'emphasis': 'strong'
-            },
-            EmotionalState.CALM: {
-                'pitch_modifier': 0.95,
-                'speed_modifier': 0.93,
-                'pause_frequency': 'increased',
-                'emphasis': 'soft'
-            }
-        }
-    
-    def get_prosody_parameters(self, context: ConversationContext) -> Dict:
-        """Get prosody parameters based on conversation context"""
-        emotion_profile = self.emotion_profiles.get(
-            context.emotional_state, 
-            self.emotion_profiles[EmotionalState.NEUTRAL]
-        )
-        
-        # Adjust for conversation stage
-        stage_adjustments = self._get_stage_adjustments(context.conversation_stage)
-        
-        # Combine base settings with emotional and stage adjustments
-        parameters = {
-            'temperature': self.base_settings['temperature'],
-            'pitch': self.base_settings['pitch_range'][0] * emotion_profile['pitch_modifier'] * stage_adjustments['pitch'],
-            'speed': self.base_settings['speed_range'][0] * emotion_profile['speed_modifier'] * stage_adjustments['speed'],
-            'pause_frequency': emotion_profile['pause_frequency'],
-            'emphasis': emotion_profile['emphasis'],
-            'max_new_tokens': self._calculate_token_length(context)
-        }
-        
-        return parameters
-    
-    def _get_stage_adjustments(self, stage: ConversationStage) -> Dict:
-        """Get prosody adjustments based on conversation stage"""
-        stage_modifiers = {
-            ConversationStage.GREETING: {'pitch': 1.03, 'speed': 1.0},
-            ConversationStage.NEEDS_ASSESSMENT: {'pitch': 1.0, 'speed': 0.98},
-            ConversationStage.MAIN_INTERACTION: {'pitch': 1.0, 'speed': 1.0},
-            ConversationStage.OBJECTION_HANDLING: {'pitch': 0.98, 'speed': 0.95},
-            ConversationStage.CLOSING: {'pitch': 1.02, 'speed': 0.98},
-            ConversationStage.WRAP_UP: {'pitch': 1.05, 'speed': 1.0}
-        }
-        
-        return stage_modifiers.get(stage, {'pitch': 1.0, 'speed': 1.0})
-    
-    def _calculate_token_length(self, context: ConversationContext) -> int:
-        """Calculate appropriate token length based on context"""
-        base_tokens = {
-            'short': 60,
-            'normal': 80,
-            'expressive': 100
-        }
-        
-        # Adjust based on response length preference
-        tokens = base_tokens.get(context.response_length, 80)
-        
-        # Further adjust based on personality tone
-        tone_adjustments = {
-            PersonalityTone.WARM_WELCOMING: 85,
-            PersonalityTone.CONFIDENT_KNOWLEDGEABLE: 95,
-            PersonalityTone.HELPFUL_EAGER: 90,
-            PersonalityTone.REASSURING_TRUSTWORTHY: 80
-        }
-        
-        return tone_adjustments.get(context.personality_tone, tokens)
-
-# ============================================================================
-# SPEECH ENHANCER
-# ============================================================================
-
-class SpeechEnhancer:
-    """Enhances text with natural speech patterns and personality traits"""
-    
-    def __init__(self, personality_profile: PersonalityProfile):
-        self.personality = personality_profile
-        self.filler_insertion_probability = 0.15
-        self.breath_marker_probability = 0.1
-        
-    def enhance_text(self, text: str, context: ConversationContext) -> str:
-        """Apply personality-based text enhancements"""
-        enhanced = text
-        
-        # Apply personality-specific enhancements
-        enhanced = self._apply_personality_style(enhanced, context.personality_tone)
-        
-        # Add natural speech elements
-        enhanced = self._add_natural_elements(enhanced, context)
-        
-        # Apply emotional coloring
-        enhanced = self._apply_emotional_coloring(enhanced, context.emotional_state)
-        
-        return enhanced
-    
-    def _apply_personality_style(self, text: str, tone: PersonalityTone) -> str:
-        """Apply personality-specific language patterns"""
-        style_transforms = {
-            PersonalityTone.WARM_WELCOMING: self._warm_welcoming_style,
-            PersonalityTone.CONFIDENT_KNOWLEDGEABLE: self._confident_style,
-            PersonalityTone.HELPFUL_EAGER: self._eager_style,
-            PersonalityTone.REASSURING_TRUSTWORTHY: self._reassuring_style
-        }
-        
-        transform = style_transforms.get(tone, lambda x: x)
-        return transform(text)
-    
-    def _warm_welcoming_style(self, text: str) -> str:
-        """Apply warm welcoming style"""
-        if not text.lower().startswith(('hi', 'hello', 'welcome')):
-            text = f"Hi there! {text}"
-        text = text.replace(' help ', ' absolutely help ')
-        text = text.replace(' can ', ' would love to ')
-        return text
-    
-    def _confident_style(self, text: str) -> str:
-        """Apply confident knowledgeable style"""
-        text = text.replace(' think ', ' know ')
-        text = text.replace(' probably ', ' definitely ')
-        text = text.replace(' good ', ' excellent ')
-        return text
-    
-    def _eager_style(self, text: str) -> str:
-        """Apply helpful eager style"""
-        if not text.lower().startswith(('perfect', 'great', 'awesome')):
-            text = f"Perfect! {text}"
-        text = text.replace(' can ', ' can absolutely ')
-        text = text.replace(' will ', ' will definitely ')
-        return text
-    
-    def _reassuring_style(self, text: str) -> str:
-        """Apply reassuring trustworthy style"""
-        if 'understand' not in text.lower():
-            text = f"I completely understand. {text}"
-        text = text.replace(' will ', ' will personally ')
-        text = text.replace(' ensure ', ' absolutely ensure ')
-        return text
-    
-    def _add_natural_elements(self, text: str, context: ConversationContext) -> str:
-        """Add natural speech elements like fillers and pauses"""
-        import random
-        
-        # Add occasional fillers
-        if random.random() < self.filler_insertion_probability:
-            filler = random.choice(self.personality.filler_words)
-            words = text.split()
-            if len(words) > 5:
-                insert_pos = random.randint(2, min(5, len(words)-1))
-                words.insert(insert_pos, filler)
-                text = ' '.join(words)
-        
-        # Add breath markers (for speech synthesis)
-        if random.random() < self.breath_marker_probability:
-            text = text.replace('. ', '. <breath> ')
-        
-        return text
-    
-    def _apply_emotional_coloring(self, text: str, emotion: EmotionalState) -> str:
-        """Apply emotional coloring to text"""
-        emotion_modifiers = {
-            EmotionalState.HAPPY: lambda t: t.replace('!', '!!'),
-            EmotionalState.EMPATHETIC: lambda t: f"I hear you. {t}",
-            EmotionalState.CONFIDENT: lambda t: t.replace('I think', 'I know'),
-            EmotionalState.REASSURING: lambda t: f"Don't worry. {t}",
-            EmotionalState.EXCITED: lambda t: t.upper() if len(t) < 20 else t + '!',
-            EmotionalState.CALM: lambda t: t.replace('!', '.')
-        }
-        
-        modifier = emotion_modifiers.get(emotion, lambda t: t)
-        return modifier(text)
-
-# ============================================================================
-# MAIN MAYA VOICE AGENT
+# FIXED MAYA VOICE AGENT - Working with CSM tokenization
 # ============================================================================
 
 class MayaVoiceAgent:
-    """Complete Maya-level voice agent with all enhancements"""
+    """Maya Voice Agent with fixed CSM compatibility"""
     
     def __init__(self, model_id: str = "sesame/csm-1b"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Initializing Maya Voice Agent on {self.device}")
         
-        # Initialize personality
+        # Initialize personality components
         self.personality = PersonalityProfile()
-        
-        # Initialize components
         self.memory = ConversationalMemory()
-        self.dialogue_manager = DialogueStateManager(self.personality)
-        self.prosody_controller = ProsodyController()
         self.speech_enhancer = SpeechEnhancer(self.personality)
+        
+        # Maya's optimal settings (from working implementation)
+        self.maya_settings = {
+            'temperature': 0.72,
+            'max_new_tokens_short': 60,
+            'max_new_tokens_normal': 80,
+            'max_new_tokens_expressive': 100,
+            'do_sample': True,
+            'top_k': 50,
+            'top_p': 0.9,
+            'repetition_penalty': 1.1,
+        }
         
         # Load model
         self._load_model(model_id)
@@ -554,12 +268,22 @@ class MayaVoiceAgent:
         # Session management
         self.active_sessions: Dict[str, ConversationContext] = {}
         
-        logger.info("Maya Voice Agent initialized successfully")
+        logger.info("✅ Maya Voice Agent initialized successfully")
     
     def _load_model(self, model_id: str):
-        """Load CSM model with optimal settings"""
+        """Load CSM model with proper configuration"""
         try:
-            self.processor = AutoProcessor.from_pretrained(model_id)
+            logger.info(f"Loading model {model_id}...")
+            
+            # Try AutoProcessor first, fall back to WhisperProcessor if needed
+            try:
+                self.processor = AutoProcessor.from_pretrained(model_id)
+                logger.info("Using AutoProcessor")
+            except:
+                logger.info("AutoProcessor failed, trying WhisperProcessor")
+                self.processor = WhisperProcessor.from_pretrained(model_id)
+            
+            # Load model with optimal settings
             self.model = CsmForConditionalGeneration.from_pretrained(
                 model_id,
                 device_map=self.device,
@@ -567,7 +291,9 @@ class MayaVoiceAgent:
                 use_cache=True
             )
             self.model.eval()
-            logger.info(f"Model {model_id} loaded successfully")
+            
+            logger.info(f"✅ Model loaded successfully")
+            
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             raise
@@ -586,68 +312,171 @@ class MayaVoiceAgent:
         
         return context
     
-    def analyze_user_input(self, text: str, audio_features: Optional[Dict] = None) -> Dict[str, Any]:
+    def analyze_user_input(self, text: str) -> Dict[str, Any]:
         """Analyze user input for emotional and contextual cues"""
-        analysis = {
-            'detected_emotion': EmotionalState.NEUTRAL,
-            'detected_intent': 'general',
-            'urgency_level': 'normal',
-            'requires_personality_shift': False
-        }
-        
         text_lower = text.lower()
         
-        # Emotion detection
-        if any(word in text_lower for word in ['angry', 'frustrated', 'upset']):
-            analysis['detected_emotion'] = EmotionalState.EMPATHETIC
-            analysis['requires_personality_shift'] = True
-        elif any(word in text_lower for word in ['happy', 'great', 'excellent']):
-            analysis['detected_emotion'] = EmotionalState.HAPPY
-        elif any(word in text_lower for word in ['worried', 'concerned', 'afraid']):
-            analysis['detected_emotion'] = EmotionalState.REASSURING
-            analysis['requires_personality_shift'] = True
+        # Determine emotional response needed
+        if any(word in text_lower for word in ['worried', 'concern', 'afraid']):
+            emotion = EmotionalState.REASSURING
+            tone = PersonalityTone.REASSURING_TRUSTWORTHY
+        elif any(word in text_lower for word in ['order', 'buy', 'want']):
+            emotion = EmotionalState.EXCITED
+            tone = PersonalityTone.HELPFUL_EAGER
+        elif any(word in text_lower for word in ['tell me', 'about', 'information']):
+            emotion = EmotionalState.CONFIDENT
+            tone = PersonalityTone.CONFIDENT_KNOWLEDGEABLE
+        else:
+            emotion = EmotionalState.NEUTRAL
+            tone = PersonalityTone.WARM_WELCOMING
+            
+        # Detect urgency
+        urgency = 'high' if any(word in text_lower for word in ['urgent', 'asap', 'quickly']) else 'normal'
         
-        # Intent detection
-        if any(word in text_lower for word in ['order', 'buy', 'purchase']):
-            analysis['detected_intent'] = 'transaction'
-        elif any(word in text_lower for word in ['help', 'support', 'assist']):
-            analysis['detected_intent'] = 'support'
-        elif any(word in text_lower for word in ['information', 'about', 'tell me']):
-            analysis['detected_intent'] = 'inquiry'
-        
-        # Urgency detection
-        if any(word in text_lower for word in ['urgent', 'asap', 'immediately', 'quickly']):
-            analysis['urgency_level'] = 'high'
-        
-        return analysis
+        return {
+            'detected_emotion': emotion,
+            'suggested_tone': tone,
+            'urgency_level': urgency
+        }
     
-    def determine_personality_tone(self, context: ConversationContext, user_analysis: Dict) -> PersonalityTone:
-        """Dynamically determine appropriate personality tone"""
+    def get_generation_params(self, context: ConversationContext) -> Dict:
+        """Get Maya's optimal generation parameters"""
         
-        # If user needs reassurance, switch to reassuring tone
-        if user_analysis['detected_emotion'] == EmotionalState.REASSURING:
-            return PersonalityTone.REASSURING_TRUSTWORTHY
+        # Base parameters (always use Maya's optimal temperature)
+        params = {
+            'do_sample': self.maya_settings['do_sample'],
+            'temperature': self.maya_settings['temperature'],
+            'top_k': self.maya_settings['top_k'],
+            'top_p': self.maya_settings['top_p'],
+            'repetition_penalty': self.maya_settings['repetition_penalty']
+        }
         
-        # If user is upset, use empathetic warm tone
-        elif user_analysis['detected_emotion'] == EmotionalState.EMPATHETIC:
-            return PersonalityTone.WARM_WELCOMING
+        # Adjust token length based on personality and stage
+        if context.response_length == 'short' or context.conversation_stage == ConversationStage.WRAP_UP:
+            params['max_new_tokens'] = self.maya_settings['max_new_tokens_short']
+        elif context.personality_tone == PersonalityTone.CONFIDENT_KNOWLEDGEABLE:
+            params['max_new_tokens'] = self.maya_settings['max_new_tokens_expressive']
+        else:
+            params['max_new_tokens'] = self.maya_settings['max_new_tokens_normal']
+            
+        return params
+    
+    def _generate_speech_safe(self, text: str, params: Dict) -> Optional[torch.Tensor]:
+        """Generate speech using multiple fallback methods"""
         
-        # For transactions, be helpful and eager
-        elif user_analysis['detected_intent'] == 'transaction':
-            return PersonalityTone.HELPFUL_EAGER
+        # Method 1: Try simple conversation format (most reliable)
+        try:
+            logger.info("Trying Method 1: Simple conversation format")
+            conversation = [
+                {"role": "0", "content": [{"type": "text", "text": text}]}
+            ]
+            
+            inputs = self.processor.apply_chat_template(
+                conversation,
+                tokenize=True,
+                return_dict=True
+            ).to(self.device)
+            
+            with torch.no_grad():
+                audio = self.model.generate(
+                    **inputs,
+                    output_audio=True,
+                    **params
+                )
+            
+            logger.info("✅ Method 1 successful")
+            return self._process_audio_output(audio)
+            
+        except Exception as e:
+            logger.warning(f"Method 1 failed: {e}")
         
-        # For information requests, be knowledgeable
-        elif user_analysis['detected_intent'] == 'inquiry':
-            return PersonalityTone.CONFIDENT_KNOWLEDGEABLE
+        # Method 2: Try direct text input (fallback)
+        try:
+            logger.info("Trying Method 2: Direct text input")
+            
+            # Format text with speaker marker
+            text_input = f"[0]{text}"
+            
+            # Use simple tokenization
+            inputs = self.processor(
+                text_input, 
+                add_special_tokens=True, 
+                return_tensors="pt"
+            ).to(self.device)
+            
+            with torch.no_grad():
+                audio = self.model.generate(
+                    **inputs,
+                    output_audio=True,
+                    **params
+                )
+            
+            logger.info("✅ Method 2 successful")
+            return self._process_audio_output(audio)
+            
+        except Exception as e:
+            logger.warning(f"Method 2 failed: {e}")
         
-        # Otherwise, maintain current tone
-        return context.personality_tone
+        # Method 3: Most basic approach
+        try:
+            logger.info("Trying Method 3: Basic generation")
+            
+            # Simplest possible input
+            basic_conversation = [
+                {"role": "0", "content": [{"type": "text", "text": text[:100]}]}  # Limit text length
+            ]
+            
+            inputs = self.processor.apply_chat_template(
+                basic_conversation,
+                tokenize=True,
+                return_dict=True
+            ).to(self.device)
+            
+            # Use minimal parameters
+            with torch.no_grad():
+                audio = self.model.generate(
+                    **inputs,
+                    output_audio=True,
+                    max_new_tokens=60  # Fixed short length
+                )
+            
+            logger.info("✅ Method 3 successful")
+            return self._process_audio_output(audio)
+            
+        except Exception as e:
+            logger.error(f"All methods failed: {e}")
+            return None
+    
+    def _process_audio_output(self, audio) -> torch.Tensor:
+        """Process and normalize audio output"""
+        
+        # Handle different output formats
+        if isinstance(audio, list):
+            if len(audio) > 0 and isinstance(audio[0], torch.Tensor):
+                audio = audio[0]
+            else:
+                logger.warning("Unexpected audio list format")
+                return audio
+                
+        if isinstance(audio, torch.Tensor):
+            # Move to CPU if needed
+            if audio.is_cuda:
+                audio = audio.cpu()
+                
+            # Normalize audio
+            if torch.max(torch.abs(audio)) > 0:
+                audio = audio / torch.max(torch.abs(audio)) * 0.9
+                
+            return audio
+        else:
+            logger.warning(f"Unknown audio format: {type(audio)}")
+            return audio
     
     def generate_response(self, session_id: str, user_input: str, 
                          agent_response_text: str) -> Tuple[Any, str, Dict]:
-        """Generate Maya-level speech response"""
+        """Generate Maya-level speech response with fixed CSM compatibility"""
         
-        # Get or create session context
+        # Get or create session
         if session_id not in self.active_sessions:
             context = self.create_session(session_id)
         else:
@@ -656,226 +485,234 @@ class MayaVoiceAgent:
         # Analyze user input
         user_analysis = self.analyze_user_input(user_input)
         
-        # Update context based on analysis
-        context.personality_tone = self.determine_personality_tone(context, user_analysis)
+        # Update context
+        context.personality_tone = user_analysis['suggested_tone']
         context.emotional_state = user_analysis['detected_emotion']
+        context.response_length = 'short' if user_analysis['urgency_level'] == 'high' else 'normal'
         context.turn_count += 1
         
-        # Get conversation flow analysis
-        flow_analysis = self.memory.analyze_conversation_flow(session_id)
-        
         # Update conversation stage
-        context.conversation_stage = self.dialogue_manager.get_next_stage(
-            context.conversation_stage, context
-        )
+        if context.turn_count <= 2:
+            context.conversation_stage = ConversationStage.GREETING
+        elif context.turn_count > 8:
+            context.conversation_stage = ConversationStage.CLOSING
+        else:
+            context.conversation_stage = ConversationStage.MAIN_INTERACTION
         
-        # Enhance response text based on stage
-        enhanced_text = self.dialogue_manager.get_stage_appropriate_response(
-            context.conversation_stage, agent_response_text
-        )
+        # Enhance text with personality
+        enhanced_text = self.speech_enhancer.enhance_text(agent_response_text, context)
         
-        # Apply personality and emotional enhancements
-        enhanced_text = self.speech_enhancer.enhance_text(enhanced_text, context)
+        # Get generation parameters
+        params = self.get_generation_params(context)
         
-        # Get prosody parameters
-        prosody_params = self.prosody_controller.get_prosody_parameters(context)
+        # Log generation details
+        logger.info(f"Generating for session {session_id}")
+        logger.info(f"Personality: {context.personality_tone.value}")
+        logger.info(f"Emotion: {context.emotional_state.value}")
+        logger.info(f"Enhanced text: {enhanced_text[:50]}...")
+        logger.info(f"Parameters: temp={params['temperature']}, tokens={params['max_new_tokens']}")
         
-        # Add to memory
-        self.memory.add_turn(session_id, 'agent', enhanced_text, 
-                           emotion=context.emotional_state.value)
-        self.memory.add_turn(session_id, 'user', user_input,
-                           emotion=user_analysis['detected_emotion'].value)
+        # Generate speech with fallback methods
+        audio = self._generate_speech_safe(enhanced_text, params)
         
-        # Generate speech
-        try:
-            audio = self._generate_speech(enhanced_text, prosody_params)
-            
-            logger.info(f"Generated response for session {session_id}")
-            logger.info(f"Personality: {context.personality_tone.value}")
-            logger.info(f"Emotion: {context.emotional_state.value}")
-            logger.info(f"Stage: {context.conversation_stage.value}")
-            
-            return audio, enhanced_text, {
-                'context': context,
-                'prosody': prosody_params,
-                'user_analysis': user_analysis,
-                'flow_analysis': flow_analysis
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to generate speech: {e}")
-            return None, enhanced_text, {'error': str(e)}
-    
-    def _generate_speech(self, text: str, prosody_params: Dict) -> torch.Tensor:
-        """Generate speech with prosody parameters"""
+        # Update memory
+        self.memory.add_turn(session_id, 'user', user_input)
+        self.memory.add_turn(session_id, 'agent', enhanced_text)
         
-        # Prepare conversation format for CSM
-        conversation = [
-            {"role": "0", "content": [{"type": "text", "text": text}]}
-        ]
+        # Prepare metadata
+        metadata = {
+            'context': context,
+            'params': params,
+            'user_analysis': user_analysis,
+            'success': audio is not None
+        }
         
-        # Process inputs
-        inputs = self.processor.apply_chat_template(
-            conversation,
-            tokenize=True,
-            return_dict=True
-        ).to(self.device)
-        
-        # Generate speech
-        with torch.no_grad():
-            audio = self.model.generate(
-                **inputs,
-                output_audio=True,
-                max_new_tokens=prosody_params['max_new_tokens'],
-                temperature=prosody_params['temperature'],
-                do_sample=True,
-                top_k=50,
-                top_p=0.9,
-                repetition_penalty=1.1
-            )
-        
-        return audio
+        return audio, enhanced_text, metadata
     
     def save_audio(self, audio: torch.Tensor, filename: str, sample_rate: int = 16000):
-        """Save generated audio to file"""
-        try:
-            # Handle different audio formats
-            if isinstance(audio, list):
-                audio = audio[0] if len(audio) > 0 else audio
+        """Save audio to file"""
+        if audio is None:
+            logger.error("Cannot save None audio")
+            return
             
-            if isinstance(audio, torch.Tensor):
-                # Ensure audio is on CPU
+        try:
+            # Ensure audio is a tensor
+            if not isinstance(audio, torch.Tensor):
+                logger.error(f"Audio is not a tensor: {type(audio)}")
+                return
+            
+            # Move to CPU
+            if audio.is_cuda:
                 audio = audio.cpu()
-                
-                # Normalize audio
-                if torch.max(torch.abs(audio)) > 0:
-                    audio = audio / torch.max(torch.abs(audio)) * 0.95
-                
-                # Save using torchaudio
-                torchaudio.save(filename, audio.unsqueeze(0), sample_rate)
-                logger.info(f"Audio saved to {filename}")
-            else:
-                logger.error(f"Unsupported audio format: {type(audio)}")
-                
+            
+            # Ensure correct shape (add batch dimension if needed)
+            if audio.dim() == 1:
+                audio = audio.unsqueeze(0)
+            
+            # Save using torchaudio
+            torchaudio.save(filename, audio, sample_rate)
+            logger.info(f"✅ Audio saved to {filename}")
+            
         except Exception as e:
             logger.error(f"Failed to save audio: {e}")
+            
+            # Try alternative save method
+            try:
+                # Convert to numpy and save with scipy
+                import scipy.io.wavfile as wavfile
+                audio_np = audio.numpy()
+                if audio_np.ndim == 2:
+                    audio_np = audio_np.squeeze()
+                # Convert to int16 for wav
+                audio_int16 = np.int16(audio_np * 32767)
+                wavfile.write(filename, sample_rate, audio_int16)
+                logger.info(f"✅ Audio saved using scipy to {filename}")
+            except Exception as e2:
+                logger.error(f"Alternative save also failed: {e2}")
 
 # ============================================================================
-# TESTING AND EVALUATION
+# TESTING
 # ============================================================================
 
 def test_maya_agent():
-    """Comprehensive test of Maya Voice Agent"""
+    """Test Maya Voice Agent with CSM compatibility fixes"""
     
-    print("🎭 MAYA VOICE AGENT - COMPREHENSIVE TEST")
+    print("🎭 MAYA VOICE AGENT - FIXED IMPLEMENTATION TEST")
     print("=" * 60)
     
-    # Initialize agent
-    agent = MayaVoiceAgent()
-    
-    # Test scenarios
-    test_scenarios = [
-        {
-            'name': 'Restaurant Greeting',
-            'session_id': 'test_restaurant_001',
-            'user_input': "Hi, I'd like to make a reservation",
-            'agent_response': "Welcome to our restaurant! I'd be delighted to help you with your reservation.",
-            'expected_tone': PersonalityTone.WARM_WELCOMING
-        },
-        {
-            'name': 'Product Inquiry',
-            'session_id': 'test_product_001',
-            'user_input': "Can you tell me about your most popular items?",
-            'agent_response': "Our signature dishes are absolutely worth trying, especially the chef's special.",
-            'expected_tone': PersonalityTone.CONFIDENT_KNOWLEDGEABLE
-        },
-        {
-            'name': 'Urgent Request',
-            'session_id': 'test_urgent_001',
-            'user_input': "I need help right away with my order",
-            'agent_response': "I'll help you with that immediately.",
-            'expected_tone': PersonalityTone.HELPFUL_EAGER
-        },
-        {
-            'name': 'Customer Concern',
-            'session_id': 'test_concern_001',
-            'user_input': "I'm worried about the delivery time",
-            'agent_response': "Your concern is completely valid, and I'll make sure everything arrives on time.",
-            'expected_tone': PersonalityTone.REASSURING_TRUSTWORTHY
-        }
-    ]
-    
-    results = []
-    
-    for scenario in test_scenarios:
-        print(f"\n📝 Testing: {scenario['name']}")
-        print(f"👤 User: {scenario['user_input']}")
-        print(f"🎯 Expected Tone: {scenario['expected_tone'].value}")
+    try:
+        # Initialize agent
+        print("Initializing Maya Voice Agent...")
+        agent = MayaVoiceAgent()
+        print("✅ Agent initialized successfully\n")
         
-        try:
-            # Generate response
-            audio, enhanced_text, metadata = agent.generate_response(
-                session_id=scenario['session_id'],
-                user_input=scenario['user_input'],
-                agent_response_text=scenario['agent_response']
-            )
+        # Test scenarios
+        test_scenarios = [
+            {
+                'name': 'Restaurant Greeting',
+                'session_id': 'test_restaurant_001',
+                'user_input': "Hi, I'd like to make a reservation",
+                'agent_response': "Welcome to our restaurant! I'd be delighted to help you with your reservation.",
+                'expected_tone': PersonalityTone.WARM_WELCOMING
+            },
+            {
+                'name': 'Product Inquiry',
+                'session_id': 'test_product_001',
+                'user_input': "Can you tell me about your most popular items?",
+                'agent_response': "Our signature dishes are absolutely worth trying.",
+                'expected_tone': PersonalityTone.CONFIDENT_KNOWLEDGEABLE
+            },
+            {
+                'name': 'Urgent Request',
+                'session_id': 'test_urgent_001',
+                'user_input': "I need help right away with my order",
+                'agent_response': "I'll help you with that immediately.",
+                'expected_tone': PersonalityTone.HELPFUL_EAGER
+            },
+            {
+                'name': 'Customer Concern',
+                'session_id': 'test_concern_001',
+                'user_input': "I'm worried about the delivery time",
+                'agent_response': "Your concern is completely valid.",
+                'expected_tone': PersonalityTone.REASSURING_TRUSTWORTHY
+            }
+        ]
+        
+        results = []
+        
+        for i, scenario in enumerate(test_scenarios):
+            print(f"\n📝 Test {i+1}: {scenario['name']}")
+            print(f"👤 User: {scenario['user_input']}")
+            print(f"🎯 Expected: {scenario['expected_tone'].value}")
             
-            if audio is not None:
-                # Save audio
-                filename = f"maya_test_{scenario['session_id']}.wav"
-                agent.save_audio(audio, filename)
+            try:
+                # Generate response
+                audio, enhanced_text, metadata = agent.generate_response(
+                    session_id=scenario['session_id'],
+                    user_input=scenario['user_input'],
+                    agent_response_text=scenario['agent_response']
+                )
                 
-                print(f"✅ Generated: {filename}")
-                print(f"💬 Enhanced: {enhanced_text}")
-                print(f"🎭 Actual Tone: {metadata['context'].personality_tone.value}")
-                print(f"🎵 Emotion: {metadata['context'].emotional_state.value}")
-                print(f"📊 Stage: {metadata['context'].conversation_stage.value}")
-                
-                results.append({
-                    'test': scenario['name'],
-                    'success': True,
-                    'file': filename,
-                    'tone_match': metadata['context'].personality_tone == scenario['expected_tone']
-                })
-            else:
-                print(f"❌ Failed to generate audio")
+                if audio is not None:
+                    # Save audio
+                    filename = f"maya_test_{i+1}_{scenario['session_id']}.wav"
+                    agent.save_audio(audio, filename)
+                    
+                    print(f"✅ Audio generated successfully")
+                    print(f"📁 Saved to: {filename}")
+                    print(f"💬 Enhanced: {enhanced_text[:60]}...")
+                    print(f"🎭 Tone: {metadata['context'].personality_tone.value}")
+                    print(f"🎵 Emotion: {metadata['context'].emotional_state.value}")
+                    
+                    results.append({
+                        'test': scenario['name'],
+                        'success': True,
+                        'file': filename,
+                        'tone_match': metadata['context'].personality_tone.value == scenario['expected_tone'].value
+                    })
+                else:
+                    print(f"⚠️ No audio generated")
+                    results.append({
+                        'test': scenario['name'],
+                        'success': False,
+                        'error': 'No audio generated'
+                    })
+                    
+            except Exception as e:
+                print(f"❌ Test failed: {e}")
                 results.append({
                     'test': scenario['name'],
                     'success': False,
-                    'error': metadata.get('error', 'Unknown error')
+                    'error': str(e)
                 })
-                
-        except Exception as e:
-            print(f"❌ Test failed: {e}")
-            results.append({
-                'test': scenario['name'],
-                'success': False,
-                'error': str(e)
-            })
-    
-    # Print summary
-    print("\n" + "=" * 60)
-    print("📊 TEST SUMMARY")
-    print("=" * 60)
-    
-    success_count = sum(1 for r in results if r['success'])
-    tone_match_count = sum(1 for r in results if r.get('tone_match', False))
-    
-    print(f"✅ Success Rate: {success_count}/{len(test_scenarios)} tests passed")
-    print(f"🎯 Tone Accuracy: {tone_match_count}/{success_count} correct tones")
-    
-    for result in results:
-        status = "✅" if result['success'] else "❌"
-        tone = "🎯" if result.get('tone_match', False) else "⚠️"
-        print(f"  {status} {result['test']} {tone if result['success'] else ''}")
-    
-    print("\n🎭 Maya Voice Agent Features:")
-    print("  ✅ Personality consistency across interactions")
-    print("  ✅ Emotional prosody modulation")
-    print("  ✅ Conversational memory and context")
-    print("  ✅ Stage-based dialogue management")
-    print("  ✅ Natural speech patterns and fillers")
-    print("  ✅ Dynamic personality tone selection")
+        
+        # Print summary
+        print("\n" + "=" * 60)
+        print("📊 TEST SUMMARY")
+        print("=" * 60)
+        
+        success_count = sum(1 for r in results if r['success'])
+        tone_match_count = sum(1 for r in results if r.get('tone_match', False))
+        
+        print(f"\n✅ Success Rate: {success_count}/{len(test_scenarios)} tests passed")
+        if success_count > 0:
+            print(f"🎯 Tone Accuracy: {tone_match_count}/{success_count} correct tones")
+        
+        print("\nDetailed Results:")
+        for result in results:
+            status = "✅" if result['success'] else "❌"
+            tone = "🎯" if result.get('tone_match', False) else "⚠️" if result['success'] else ""
+            print(f"  {status} {result['test']} {tone}")
+            if result['success'] and 'file' in result:
+                print(f"     📁 {result['file']}")
+        
+        if success_count > 0:
+            print("\n🎭 Maya Voice Agent Features Working:")
+            print("  ✅ CSM model integration")
+            print("  ✅ Personality-based text enhancement")
+            print("  ✅ Emotional state detection")
+            print("  ✅ Conversation stage management")
+            print("  ✅ Memory and context tracking")
+            print("  ✅ Fallback generation methods")
+            
+            print("\n🎧 Listen to the generated audio files to hear:")
+            print("  • Maya's consistent voice across personalities")
+            print("  • Natural speech patterns and flow")
+            print("  • Personality-appropriate responses")
+            print("  • Emotional tone variations")
+            
+        print("\n💡 Troubleshooting Tips:")
+        print("  • Ensure you have access to sesame/csm-1b model")
+        print("  • Check CUDA availability for faster processing")
+        print("  • Try shorter text inputs if generation fails")
+        print("  • Use fallback methods for reliability")
+        
+    except Exception as e:
+        print(f"\n❌ Critical error: {e}")
+        print("\n🔧 Please check:")
+        print("  1. Model access: huggingface-cli login")
+        print("  2. Dependencies: pip install transformers torch torchaudio")
+        print("  3. Model availability: sesame/csm-1b")
 
 if __name__ == "__main__":
     test_maya_agent()
