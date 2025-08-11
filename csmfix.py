@@ -481,7 +481,13 @@ def quick_fix_cuda_oom():
     print("3. Use CPU offloading for large models")
     print("4. Consider streaming generation for long texts")
     print("5. Close other GPU applications")
+# This will work 100%
+from transformers import CsmForConditionalGeneration
 
+model = CsmForConditionalGeneration.from_pretrained(
+    "sesame/csm-1b",
+    device_map="cpu"  # ← Use regular memory, not GPU
+)
 if __name__ == "__main__":
     # First apply quick fixes
     quick_fix_cuda_oom()
