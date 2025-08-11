@@ -754,6 +754,35 @@ class AppointmentBookingAgent:
 # ============================================================================
 # PART 8: COMPLETE TEST SYSTEM
 # ============================================================================
+# diagnose_csm.py
+from transformers import CsmForConditionalGeneration, AutoProcessor
+import torch
+
+model = CsmForConditionalGeneration.from_pretrained("sesame/csm-1b")
+processor = AutoProcessor.from_pretrained("sesame/csm-1b")
+
+print("Model type:", type(model))
+print("Model config:", model.config)
+print("Audio decoder present?", hasattr(model, 'audio_decoder'))
+print("Generation methods:", [m for m in dir(model) if 'generate' in m])
+
+# Try the official generation method
+text = "Hello world"
+inputs = processor(text, return_tensors="pt")
+
+# Check what inputs look like
+print("Input keys:", inputs.keys() if hasattr(inputs, 'keys') else type(inputs))
+
+# Try generation
+try:
+    with torch.no_grad():
+        outputs = model.generate(**inputs if isinstance(inputs, dict) else {"input_ids": inputs})
+    print("Output type:", type(outputs))
+    print("Output shape:", outputs.shape if hasattr(outputs, 'shape') else "No shape")
+except Exception as e:
+    print(f"Generation error: {e}")
+
+
 
 def test_complete_system():
     """Test the complete voice agent system"""
