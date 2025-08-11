@@ -1,36 +1,31 @@
-# save as test_current.py
+# Test if everything works with Python 3.11
 import sys
-print(f"Python version: {sys.version}")
+print(f"Python: {sys.version}")
 
-try:
-    import torch
-    print(f"✅ PyTorch: {torch.__version__}")
-except:
-    print("❌ PyTorch not installed")
-
-try:
-    import transformers
-    print(f"✅ Transformers: {transformers.__version__}")
-except:
-    print("❌ Transformers not installed")
-
-try:
-    import torchaudio
-    print(f"✅ Torchaudio: {torchaudio.__version__}")
-except:
-    print("❌ Torchaudio not installed")
-
+# Test imports
 try:
     import sentencepiece
-    print("✅ Sentencepiece installed")
+    print("✅ Sentencepiece loaded!")
 except:
-    print("❌ Sentencepiece NOT installed (this is the problem)")
+    print("❌ Sentencepiece failed")
 
-# Test if we can load models without sentencepiece
-print("\nTesting model loading without sentencepiece...")
 try:
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    print("✅ Can load models without sentencepiece!")
+    from transformers import CsmForConditionalGeneration, AutoProcessor
+    print("✅ Transformers CSM support loaded!")
+    
+    # Load the model
+    print("\nLoading CSM-1B model...")
+    model = CsmForConditionalGeneration.from_pretrained("sesame/csm-1b")
+    processor = AutoProcessor.from_pretrained("sesame/csm-1b")
+    print("✅ CSM Model loaded successfully!")
+    
 except Exception as e:
-    print(f"❌ Model loading failed: {e}")
+    print(f"❌ Error: {e}")
+
+# Test the generator from CSM repo
+try:
+    from generator import load_csm_1b
+    model = load_csm_1b(device="cpu")
+    print("✅ CSM generator loaded!")
+except Exception as e:
+    print(f"⚠️ Generator not available: {e}")
